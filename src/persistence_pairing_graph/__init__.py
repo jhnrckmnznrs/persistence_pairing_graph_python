@@ -71,12 +71,12 @@ class PersistencePairingGraph:
 
     def to_networkx(self):
         """Convert to a NetworkX DiGraph (requires separately installed networkx)."""
+        if not self.edges_materialized:
+            raise ValueError('Graph edges were streamed to CSV; load the CSV or compute with retained edges')
         try:
             import networkx as nx
         except ImportError as exc:
             raise ImportError("Install networkx to use to_networkx()") from exc
-        if not self.edges_materialized:
-            raise ValueError('Graph edges were streamed to CSV; load the CSV or compute with retained edges')
         graph = nx.DiGraph()
         for i, node in enumerate(self.nodes):
             graph.add_node(i, dimension=node.dimension, birth_cell=node.birth_cell,
