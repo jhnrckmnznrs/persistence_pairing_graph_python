@@ -171,7 +171,8 @@ def _solve_triangular_bitsets(rows: list[set[int]], m: int) -> list[int] | None:
 def iter_edges(values: np.ndarray, reduction: Reduction,
                nodes: Sequence[PersistenceNode], *,
                max_relation_cache_entries: int = 100_000,
-               skip_empty_survivor_events: bool = True):
+               skip_empty_survivor_events: bool = True,
+               event: tuple[int | float, int] | None = None):
     """Compute directed transition coefficients with simultaneous-death events.
 
     For each death event, relations are projected into the active persistence
@@ -302,6 +303,9 @@ def iter_edges(values: np.ndarray, reduction: Reduction,
         while end < len(finite) and (death_value_at(finite[end]) == t
                                      and dim_at(finite[end]) == dim):
             end += 1
+        if event is not None and (t, dim) != event:
+            start = end
+            continue
         if skip_empty_survivor_events:
             if isinstance(nodes, CompactNodeTable):
                 active_after = (int(np.searchsorted(births_by_dim[dim], t, side='left'))

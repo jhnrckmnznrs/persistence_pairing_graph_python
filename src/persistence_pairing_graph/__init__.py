@@ -17,6 +17,7 @@ from ._lift import (LiftedCycleRepresentative, representative_cycles_streaming,
 from ._summaries import EventSummary, write_event_summaries
 from ._edge_geometry import EdgeExplanationReport, EdgeGeometry, explain_ppg_edges
 from ._transition_witness import TransitionFillingWitness, transition_filling_witness
+from ._analysis import PPGAnalysis
 from ._multiscale import pool_scalar_field, multiscale_betti_curves, MultiscaleBetti
 from ._robustness import ppg_perturbation_probe, PerturbationReport, PerturbationSample
 
@@ -26,7 +27,7 @@ __all__ = [
     'betti_curves', 'BettiCurves', 'validate_ppg_betti', 'representative_cycles', 'CycleRepresentative',
     'representative_cycles_streaming', 'LiftedCycleRepresentative', 'lift_compressed_cycles',
     'EventSummary', 'write_event_summaries', 'EdgeGeometry', 'EdgeExplanationReport', 'explain_ppg_edges',
-    'TransitionFillingWitness', 'transition_filling_witness',
+    'TransitionFillingWitness', 'transition_filling_witness', 'PPGAnalysis',
     'pool_scalar_field', 'multiscale_betti_curves', 'MultiscaleBetti',
     'ppg_perturbation_probe', 'PerturbationReport', 'PerturbationSample',
 ]

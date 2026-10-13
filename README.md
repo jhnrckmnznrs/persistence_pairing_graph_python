@@ -391,3 +391,82 @@ This cross-language execution has **not** yet been performed in the current exec
 Persistence barcodes are invariants of the filtered complex; selected reduction-basis PPG edges are not. Alternative boundary reductions, cohomological shortcuts, union-find pairing, and arbitrary clearing must **not** replace the canonical PPG reducer without recovering the necessary basis maps. Some expensive proposals remain research directions: complete compiled cancellation/finalization, distributed value-block contraction with chain-map recovery, fully out-of-core end-to-end 256³ processing, complete arbitrary-chain homotopy maps through streaming contraction, persistent cup products, and principled individual-edge robustness under tied or perturbed filtrations.
 
 The project is released under the MIT License. For research context and citation information, see the original [persistence-pairing graph Rust repository](https://github.com/jhnrckmnznrs/persistence_pairing_graph).
+
+## Reusable analysis and selective transition witnesses (experimental)
+
+For several selected PPG transitions from one image, use a single analysis
+session rather than recompressing and re-reducing the image for every witness:
+
+```python
+import numpy as np
+from persistence_pairing_graph import PPGAnalysis
+
+image = np.zeros((14, 14, 14), dtype=np.uint8)
+image[7, 7, 7] = 90
+with PPGAnalysis(image, max_basis_columns=100_000) as session:
+    candidates = [i for i, node in enumerate(session.nodes)
+                  if node.dimension == 2 and not node.essential]
+    if candidates:
+        certificate = session.witness(candidates[0], solver="component")
+        print(certificate.filling_cell_count, session.last_component_stats)
+```
+
+`PPGAnalysis` owns one compressed complex, canonical reduction, disk-backed
+cancellation trace, and event-specific target cache. It also caches recovered
+birth-cycle representatives and incrementally builds their cancellation bases
+in increasing birth-value order. Asking for an earlier uncached birth value
+rewinds that degree's basis; certificates already returned remain valid.
+Use it as a context manager or call `close()` to remove temporary files. A bounded LRU cache of up to four complete witnesses is enabled by default (`max_cached_witnesses`), and may be disabled with zero.
+
+`solver="component"` constructs the correction only from canceled death
+cells in the **incidence-connected components touched by the residual**.
+This method still starts with the complete *list of eligible canceled deaths*
+from the mapped trace and creates a sorted search index. It avoids creating a
+full original-grid boundary basis, but is **not** fully out of core. The
+alternative `solver="pair-trace"` builds the full eligible cancellation basis
+for comparison. Both return exactly verified full death-event certificates,
+not purported certificates for individual PPG edges. `max_component_faces`,
+`max_basis_columns`, `max_basis_entries`, `max_chain_terms` and `max_work` bound
+resource consumption. Exceeding a limit raises `MemoryError`, never a partial
+or silently approximate filling.
+
+### Why incidence-component restriction is exact
+
+Fix a homological degree `q` and filtration value `t`. Let `D` be the
+original cubical boundary map restricted to **canceled `(q+1)`-death columns
+born at or before `t`**, with all original `q`-cells as rows. Construct the
+bipartite incidence graph whose vertices are these columns and the `q`-rows;
+a column is adjacent to a row exactly when its boundary coefficient is `1`.
+
+Let `epsilon` be the correction target, and let `S` be the union of connected
+components containing a nonzero row of `epsilon`. Reordering rows and columns
+by connected component makes `D` block diagonal. Consequently, if
+`D x = epsilon` has a solution, setting all coefficients outside `S` to zero
+still solves the equation. The canceled-death correction theorem above
+establishes existence in the full canceled-death span. Hence the **restricted
+incidence components suffice**. Moreover, the canceled-death columns are
+independent under the elementary-contraction assumptions: the selected
+correction is the unique solution in this span, including the same solution
+as the full canceled-pair method. The component search uses the doubled-grid
+geometry to enumerate the at most `2(n-q)` cubical cofaces of a `q`-cell; no
+geometric overlap heuristic or approximate proximity threshold enters the
+algorithm.
+
+This restriction has an important worst case. One incidence component may
+span nearly every cancellation. Selective recovery then offers little benefit
+and may have extra traversal and indexing overhead. Measurements should report
+component sizes, not just wall-clock time. The method does **not** implement
+an explicitly stored arbitrary-chain contraction `(i,p,h)` or a minimal
+geometric filling. It returns exactly checked witnesses and retains the
+filtration-respecting `R=DV` reduction convention.
+
+Use the benchmark below to compare first and repeated witness requests:
+
+```bash
+python benchmarks/benchmark_selected_witnesses.py --size 10 --repeats 3 \
+    --output witness_benchmark.json
+```
+
+The repository's `tests/validate_rust_suite.py` can perform Rust-versus-Python
+CSV comparisons when Rust tooling and the original repository are available.
+That external cross-language validation has not been executed here.
