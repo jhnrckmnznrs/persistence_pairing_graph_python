@@ -386,6 +386,31 @@ python tests/validate_rust_suite.py \
 
 This cross-language execution has **not** yet been performed in the current execution environment, which lacks Rust tooling. A successful Python-only regression suite is not proof of Rust parity.
 
+## Research direction: selective filtered chain-map replay
+
+An experimental follow-on to the two PPG preprints studies **on-demand evaluation of the
+filtered inclusion map** through a sequence of equal-filtration cell cancellations.
+A working manuscript and independently tested small-grid reference code investigate
+whether a selected compressed filling can be lifted directly into original cubical
+cells without constructing a global inclusion matrix or solving another full
+original-grid boundary system.
+
+For an elementary cancellation with paired birth `a_j` and death `b_j`,
+the inclusion maps an unaffected generator `c` to
+`c + <a_j, boundary^(j)(c)> b_j` over F₂. A reverse-replay algorithm can
+skip zero-coefficient cancellations by using sparse, indexed forward projections.
+Conditional on a valid enriched contraction trace, the lifted filling obeys
+`boundary(I(A')) = I(boundary'(A'))` and preserves the death filtration level.
+
+**Status:** this is a theorem and small-grid research prototype, **not yet part
+of the streaming production API**. The existing optional trace lacks the
+canceled birth and projected boundary-tail information required for direct
+replay. Large-volume memory behavior, independent mathematical review, and
+Rust–Python cross-language parity remain open.
+
+The reproducible implementation milestones, correctness conditions, and
+benchmark plan are tracked in [research issue #1](https://github.com/jhnrckmnznrs/persistence_pairing_graph_python/issues/1).
+
 ## Scientific limitations
 
 Persistence barcodes are invariants of the filtered complex; selected reduction-basis PPG edges are not. Alternative boundary reductions, cohomological shortcuts, union-find pairing, and arbitrary clearing must **not** replace the canonical PPG reducer without recovering the necessary basis maps. Some expensive proposals remain research directions: complete compiled cancellation/finalization, distributed value-block contraction with chain-map recovery, fully out-of-core end-to-end 256³ processing, complete arbitrary-chain homotopy maps through streaming contraction, persistent cup products, and principled individual-edge robustness under tied or perturbed filtrations.
