@@ -386,31 +386,6 @@ python tests/validate_rust_suite.py \
 
 This cross-language execution has **not** yet been performed in the current execution environment, which lacks Rust tooling. A successful Python-only regression suite is not proof of Rust parity.
 
-## Research direction: selective filtered chain-map replay
-
-An experimental follow-on to the two PPG preprints studies **on-demand evaluation of the
-filtered inclusion map** through a sequence of equal-filtration cell cancellations.
-A working manuscript and independently tested small-grid reference code investigate
-whether a selected compressed filling can be lifted directly into original cubical
-cells without constructing a global inclusion matrix or solving another full
-original-grid boundary system.
-
-For an elementary cancellation with paired birth `a_j` and death `b_j`,
-the inclusion maps an unaffected generator `c` to
-`c + <a_j, boundary^(j)(c)> b_j` over F₂. A reverse-replay algorithm can
-skip zero-coefficient cancellations by using sparse, indexed forward projections.
-Conditional on a valid enriched contraction trace, the lifted filling obeys
-`boundary(I(A')) = I(boundary'(A'))` and preserves the death filtration level.
-
-**Status:** this is a theorem and small-grid research prototype, **not yet part
-of the streaming production API**. The existing optional trace lacks the
-canceled birth and projected boundary-tail information required for direct
-replay. Large-volume memory behavior, independent mathematical review, and
-Rust–Python cross-language parity remain open.
-
-The reproducible implementation milestones, correctness conditions, and
-benchmark plan are tracked in [research issue #1](https://github.com/jhnrckmnznrs/persistence_pairing_graph_python/issues/1).
-
 ## Scientific limitations
 
 Persistence barcodes are invariants of the filtered complex; selected reduction-basis PPG edges are not. Alternative boundary reductions, cohomological shortcuts, union-find pairing, and arbitrary clearing must **not** replace the canonical PPG reducer without recovering the necessary basis maps. Some expensive proposals remain research directions: complete compiled cancellation/finalization, distributed value-block contraction with chain-map recovery, fully out-of-core end-to-end 256³ processing, complete arbitrary-chain homotopy maps through streaming contraction, persistent cup products, and principled individual-edge robustness under tied or perturbed filtrations.
@@ -495,3 +470,168 @@ python benchmarks/benchmark_selected_witnesses.py --size 10 --repeats 3 \
 The repository's `tests/validate_rust_suite.py` can perform Rust-versus-Python
 CSV comparisons when Rust tooling and the original repository are available.
 That external cross-language validation has not been executed here.
+
+## Filtered inclusion by selective reverse replay (experimental)
+
+The optional `solver="replay"` evaluates the *actual composite chain inclusion*
+from the value-block compressed complex to the original cubical complex. It
+requires **enriched cancellation records** and does not construct a global
+basis of canceled-death boundary columns. This is a different approach from
+`solver="component"`, although on tested inputs both return the same selected
+filling. The records are not retained for ordinary PPG computations.
+
+```python
+from persistence_pairing_graph import PPGAnalysis
+
+with PPGAnalysis(image, retain_inclusion_trace=True) as analysis:
+    finite = next(i for i, node in enumerate(analysis.nodes)
+                  if node.dimension == 1 and not node.essential)
+    witness = analysis.witness(finite, solver="replay")
+    print(witness.filling_grid_indices)  # original doubled-grid square cells
+    print(analysis.last_replay_stats)
+```
+
+For every elementary cancellation in its **actual processing order**, the
+streaming constructor can optionally record `(birth_old, death_old, offset,
+length)` and the projected boundary tail `r`, with
+`∂^(j) death_old = birth_old + r` in the current contracted differential.
+The fixed descriptors occupy **20 bytes per canceled pair**, and the tail arena
+uses **4 bytes per entry**. The existing eight-byte canceled-death trace is
+retained separately for other lifting backends. These are *on-disk payload*
+sizes, not total process memory.
+
+The selected replay implementation computes the sparse influence set of each
+queried original generator by projecting only its original boundary through
+prior cancellations that own a currently encountered boundary term. It then
+maintains an XOR-set of active cancellation indices and performs descending
+reverse replay **only at nonzero influence indices**. This is exact over F₂;
+it is not a geometrical heuristic. Cached influence sets are reused across
+multiple witnesses in one analysis session.
+
+`SelectiveInclusionReplay` supports three owner indexes. A direct
+`uint32` array (`owner_storage="dense"`) stores cancellation-step identifiers
+at the original cubical-cell IDs, requiring **4 bytes per original grid cell**
+and permitting constant-time lookup. A sorted packed index
+(`owner_storage="packed"`) instead uses **16 bytes per canceled pair** and
+binary-search lookup. The Python dictionary mode is useful for small traces.
+`owner_storage="auto"` chooses the direct index whenever it is no larger
+than the packed index, and otherwise chooses packed or dictionary storage.
+The index is optional because inclusion tracing itself remains optional.
+The dependency closure can still be globally large and the analysis still
+is not fully out of core.
+
+### Why the algorithm returns the exact inclusion
+
+Let the cancellations be indexed `j=0,...,m−1`. For the `j`th cancellation,
+write `∂^(j)b_j=a_j+r_j` with nonzero unit pivot on `a_j`. Its filtered
+inclusion on any chain `X` of the next complex is
+
+\[
+ i_j(X)=X+\langle a_j,\partial^{(j)}X\rangle b_j.
+\]
+
+For an original basis cell `c` that survives the first `j` contractions,
+`P_{<j}c=c`. Since `P_{<j}` is a chain map,
+
+\[
+ \langle a_j,\partial^{(j)}c\rangle
+ =\langle a_j,P_{<j}(\partial c)\rangle.
+\]
+
+The right side can be computed by forward-projecting the *original cubical
+boundary* of `c` through cancellation records with index less than `j`.
+Processing a record replaces `a_k` by `r_k`, deletes `b_k`, and leaves other
+terms unchanged. Only records owning terms in the current boundary support
+need to be examined; all other elementary projections act as the identity.
+The resulting influence list for `c` therefore gives exactly the cancellation
+coefficients appearing when `c` is present in a reverse lift.
+
+Starting with a selected compressed chain, combine these influence lists
+modulo two. Repeatedly take the **largest active cancellation index** `j`, add
+`b_j` to the current chain, and XOR the influence list for `b_j` (which
+contains only indices **strictly less than `j`**). This executes precisely the
+composition `I=i_0 i_1 ... i_(m−1)`, while skipping every zero-coefficient
+step. In particular, for compressed chains `A'` and `r'=∂'A'`,
+
+\[
+ \partial I(A')=I(r'),
+\]
+
+and all lifted cells occur no later than the original chain's filtration
+level. A PPG death-event filling is therefore obtained as `I(A')` when its
+source and target representatives are likewise selected as images under `I`.
+The resulting filling is **not necessarily area-minimal**, nor does it assign
+an independent filling to each individual graph edge.
+
+This argument establishes the algorithm assuming every stored tail is from
+the current contracted boundary, all pairs are legitimate equal-filtration
+cancellations, and the trace has their exact order. The independent tests
+materialize each intermediate differential on small images to check those
+assumptions as well as the inclusion and chain-map identities. The present
+implementation has not been formally verified or exhaustively validated for
+large scientific volumes.
+
+### Memory and runtime benchmark
+
+```bash
+python benchmarks/benchmark_reverse_replay.py --sizes 12 16 24 32 \
+    --json reverse_replay_benchmarks.json
+```
+
+The script runs ordinary tracing, enriched replay with packed indices, and
+enriched replay with Python-dictionary indices in **separate processes**. It
+reports end-to-end compression time, a selected basis-chain lift time,
+record/index storage, and peak process RSS. Individual single-run measurements
+are useful for identifying tradeoffs but should not be mistaken for stable
+performance estimates. Optional tracing adds disk writes and index-building
+costs; it should stay disabled for barcode- or graph-only computations.
+
+
+## Structured 3D witness scaling experiment
+
+`benchmarks/benchmark_large_witnesses.py` generates reproducible 3D scalar
+images containing a solid torus and hollow shell (`mixed`), an alternating
+27-object tunnel/cavity lattice (`lattice`), or an extruded multilevel
+pair-of-pants transition plus a cavity (`pants_cavity`). Run under Linux with:
+
+```bash
+python benchmarks/benchmark_large_witnesses.py --size 64 --pattern mixed \
+    --owner dense --skip-component
+python benchmarks/benchmark_large_witnesses.py --size 64 --pattern pants_cavity \
+    --owner dense --max-basis 60000
+```
+
+The component solver uses explicit capacity limits; increase the basis and
+face budgets only when memory permits. All witnesses are verified against
+the original cubical boundary equation and filtration. Raw observations,
+including resource-limited cases, are included in
+`benchmarks/results/structured_witness_benchmarks_2026-10-14.json`.
+The following numbers are **single-run observations**, not statistically
+stable averages. Each query time is measured after construction and owner
+index building unless otherwise stated.
+
+| Structure | Image | Selected witness | Direct-owner replay | Full component correction |
+| --- | --- | --- | ---: | ---: |
+| Torus and shell | 64³ | H₂, 1,840 cells | 0.113 s | 72.374 s |
+| Multilevel pants and cavity | 64³ | H₁, 208 cells, one PPG target | 0.011 s | 0.150 s |
+| Torus and shell | 128³ | H₁, 730 cells | 0.025 s | Not measured |
+| Torus and shell | 128³ | H₂, 14,780 cells | 0.601 s | Not measured |
+| 27-object lattice | 128³ | H₁, 187 cells | 0.008 s | Not measured |
+| 27-object lattice | 128³ | H₂, 3,481 cells | 0.139 s | Not measured |
+
+For the 64³ torus/shell H₂ case, component correction selected all 262,143
+eligible canceled death cells; direct reverse replay inserted 1,839 nonzero
+steps out of 1,073,341 cancellations. Both methods produced exactly the same
+filling cell IDs and boundary. At 128³, the direct-owner index takes about
+67.9 MB (4 bytes for each of 16,974,593 original cells), versus about
+135.8 MB for the packed index. The torus/shell analysis took about 83 s to
+construct and the direct index approximately 0.17 s. The complete process
+used about 420 MiB peak RSS, below the test environment's 4 GiB limit.
+
+In separate 128³ runs, packed binary-search ownership required 18–66 s for
+H₁ queries, and the full processes timed out after 360 s before completing
+H₂. These observations motivate direct indexing for dense cancellation
+traces. They do **not** demonstrate a fully out-of-core algorithm, nor imply
+that small support or fast lifting is guaranteed for arbitrary volumetric
+data. Construction still scales with the complete input complex and may
+dominate one-off analyses.

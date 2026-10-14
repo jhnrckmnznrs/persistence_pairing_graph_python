@@ -312,6 +312,7 @@ def compress_discrete_tensor_streaming(
     order_builder: str = 'auto',
     metadata_storage: str = 'memory',
     retain_chain_lifts: bool = False,
+    retain_inclusion_trace: bool = False,
 ) -> StreamingCompressedComplex:
     """Stream-contract equal-value pairs from a uint8/uint16 scalar array.
 
@@ -336,6 +337,8 @@ def compress_discrete_tensor_streaming(
 
     image = np.asarray(image)
     grid_shape, total = _validate(image, max_cells)
+    if retain_inclusion_trace:
+        retain_chain_lifts = True
     # A coordinatewise monotone scalar field (possibly reversed along each
     # axis) has contractible sublevel cubical unions. Its value-compressed
     # complex contains exactly one essential 0-generator, with no PPG edges.
@@ -363,7 +366,9 @@ def compress_discrete_tensor_streaming(
     indices = array('I')
     provenance = array('I') if retain_cell_provenance else None
     finalized = array('I')
-    trace = StreamingLiftData(grid_shape, temp_dir) if retain_chain_lifts else None
+    trace = (StreamingLiftData(grid_shape, temp_dir,
+                               retain_inclusion_trace=retain_inclusion_trace)
+             if retain_chain_lifts else None)
 
     with TemporaryDirectory(prefix='ppg_order_', dir=temp_dir) as workdir:
         if metadata_storage == 'disk':
@@ -433,7 +438,8 @@ def compress_discrete_tensor_streaming(
                             metadata[pivot] = _store_current(current, projected)
                             metadata[old] = 2
                             if trace is not None:
-                                trace.add_pair(old, bucket % dim_count, level)
+                                trace.add_pair(old, bucket % dim_count, level,
+                                               birth_old=pivot, tail=projected)
 
                 # Pass 2: finalize temporary relations in increasing (dim, old id).
                 for bucket in range(block_start, block_end):

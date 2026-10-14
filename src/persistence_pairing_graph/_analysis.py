@@ -16,6 +16,7 @@ from ._lift import (_BoundarySolver, _compressed_v_column, boundary_old_chain,
                     LiftedCycleRepresentative)
 from ._local_pairs import ComponentSolveStats, solve_component_correction
 from ._reduction import reduce_boundary
+from ._reverse_replay import SelectiveInclusionReplay
 from ._streaming import compress_discrete_tensor_streaming
 from ._transition_witness import (TransitionFillingWitness, _compressed_filling,
                                    _boundary_before_value, _original_cell_birth)
@@ -91,8 +92,12 @@ class PPGAnalysis:
     incidence components reachable from the boundary discrepancy, whereas
     `solver='pair-trace'` builds the entire eligible canceled-death basis.
 
-    This API is experimental: worst-case component closures can still reach
-    the whole original cubical complex. It does not retain explicit i, p, h.
+    With retain_inclusion_trace=True, solver='replay' evaluates the exact
+    inclusion map on selected cycles/fillings using optional projected
+    cancellation tails, without assembling a global boundary basis.
+
+    This API is experimental: worst-case selective dependency closures can
+    still be global. It does not retain a dense explicit i, p, h.
     """
 
     def __init__(self, image, *, max_original_cells: int = 100_000_000,
@@ -100,7 +105,10 @@ class PPGAnalysis:
                  max_basis_columns=200_000, max_basis_entries=5_000_000,
                  max_chain_terms=500_000, max_work=5_000_000,
                  max_relation_cache_entries=100_000,
-                 max_cached_witnesses: int = 4):
+                 max_cached_witnesses: int = 4,
+                 retain_inclusion_trace: bool = False,
+                 max_replay_columns: int = 100_000,
+                 max_replay_visited: int = 5_000_000):
         image = np.asarray(image)
         if image.ndim not in (2, 3) or image.dtype not in (np.dtype('uint8'), np.dtype('uint16')):
             raise ValueError('Expected a 2D/3D uint8 or uint16 scalar field')
@@ -113,6 +121,14 @@ class PPGAnalysis:
         self.reduction = None
         self.closed = False
         self._lifter = None
+        self._replay = None
+        self._replay_cycle_cache = {}
+        self.last_replay_stats = None
+        self.retain_inclusion_trace = retain_inclusion_trace
+        self.max_replay_columns = max_replay_columns
+        self.max_replay_visited = max_replay_visited
+        if max_replay_columns <= 0 or max_replay_visited <= 0:
+            raise ValueError('Selective replay resource limits must be positive')
         if max_cached_witnesses < 0:
             raise ValueError('max_cached_witnesses must be nonnegative')
         self.max_cached_witnesses = max_cached_witnesses
@@ -125,6 +141,7 @@ class PPGAnalysis:
             self.compressed = compress_discrete_tensor_streaming(
                 image, max_cells=max_original_cells, temp_dir=temp_dir,
                 retain_chain_lifts=True, retain_cell_provenance=True,
+                retain_inclusion_trace=retain_inclusion_trace,
                 accelerator=accelerator)
             self.reduction = reduce_boundary(self.compressed, storage=reduction_storage,
                                              log_mode='full', accelerator=accelerator,
@@ -151,6 +168,12 @@ class PPGAnalysis:
             if self.compressed is not None and self.compressed.lift_trace is not None:
                 self.compressed.lift_trace.close()
             self._witness_cache.clear()
+            self._replay_cycle_cache.clear()
+            if self._replay is not None:
+                self._replay.cache.clear()
+                if self._replay.owner is not None:
+                    self._replay.owner.clear()
+                self._replay = None
             if self._lifter is not None:
                 self._lifter.cache.clear()
                 self._lifter.states.clear()
@@ -198,8 +221,10 @@ class PPGAnalysis:
                 max_component_faces: int = 2_000_000) -> TransitionFillingWitness:
         if self.closed:
             raise RuntimeError('Analysis has been closed')
-        if solver not in ('component', 'pair-trace'):
-            raise ValueError("solver must be 'component' or 'pair-trace'")
+        if solver not in ('component', 'pair-trace', 'replay'):
+            raise ValueError("solver must be 'component', 'pair-trace' or 'replay'")
+        if solver == 'replay' and not self.retain_inclusion_trace:
+            raise ValueError('Construct PPGAnalysis with retain_inclusion_trace=True')
         if not 0 <= source_node < len(self.nodes):
             raise IndexError('Invalid persistence node')
         cache_key = (source_node, solver)
@@ -212,7 +237,35 @@ class PPGAnalysis:
         t = node.death_value
         targets = self.targets(source_node)
         ids = (source_node, *targets)
-        reps = self._lifter.get_many(ids)
+        if solver == 'replay':
+            if self._replay is None:
+                self._replay = SelectiveInclusionReplay(
+                    self.compressed.lift_trace,
+                    max_cached_columns=self.max_replay_columns,
+                    max_visited_records=self.max_replay_visited,
+                    max_influence_entries=self.max_basis_entries)
+            reps = {}
+            for node_id in ids:
+                if node_id not in self._replay_cycle_cache:
+                    selected = self.nodes[node_id]
+                    compressed_cycle = _compressed_v_column(
+                        self.reduction, selected.birth_cell, max_work=self.max_work)
+                    lifted = self._replay.lift(
+                        self.compressed.original_grid_indices[compressed_cycle],
+                        max_output_cells=self.max_chain_terms)
+                    if len(boundary_old_chain(lifted, self.grid_shape)):
+                        raise RuntimeError('Reverse-replayed representative is not a cycle')
+                    if any(_original_cell_birth(self.image, k, self.grid_shape)
+                           > selected.birth_value for k in lifted):
+                        raise RuntimeError('Reverse-replayed cycle exceeds birth filtration')
+                    coords = np.column_stack(np.unravel_index(lifted, self.grid_shape))
+                    self._replay_cycle_cache[node_id] = LiftedCycleRepresentative(
+                        selected.dimension, selected.birth_cell, selected.death_cell,
+                        selected.birth_value, selected.death_value,
+                        np.asarray(compressed_cycle, dtype=np.int64), lifted, coords)
+                reps[node_id] = self._replay_cycle_cache[node_id]
+        else:
+            reps = self._lifter.get_many(ids)
         original_relation: set[int] = set()
         compressed_relation: set[int] = set()
         for rep in reps.values():
@@ -227,14 +280,23 @@ class PPGAnalysis:
             raise RuntimeError('Transition already bounded strictly before the death event')
         seed = set(map(int, self.compressed.original_grid_indices[compressed_filling]))
         residual = original_relation ^ set(map(int, boundary_old_chain(seed, self.grid_shape)))
-        if solver == 'component':
+        if solver == 'replay':
+            self.last_component_stats = None
+            filling = self._replay.lift(
+                self.compressed.original_grid_indices[compressed_filling],
+                max_output_cells=self.max_chain_terms)
+            self.last_replay_stats = self._replay.last_stats
+            correction = np.asarray(sorted(seed ^ set(map(int, filling))), dtype=np.int64)
+        elif solver == 'component':
+            self.last_replay_stats = None
             correction, self.last_component_stats = solve_component_correction(
                 self.compressed.lift_trace, residual, dimension=node.dimension, level=t,
                 max_basis_columns=self.max_basis_columns,
                 max_basis_entries=self.max_basis_entries,
                 max_chain_terms=self.max_chain_terms,
                 max_component_faces=max_component_faces)
-        else:
+        elif solver == 'pair-trace':
+            self.last_replay_stats = None
             self.last_component_stats = None
             pair_basis = _BoundarySolver(self.grid_shape,
                                          max_basis_columns=self.max_basis_columns,

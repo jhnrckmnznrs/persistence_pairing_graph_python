@@ -18,10 +18,12 @@ from ._summaries import EventSummary, write_event_summaries
 from ._edge_geometry import EdgeExplanationReport, EdgeGeometry, explain_ppg_edges
 from ._transition_witness import TransitionFillingWitness, transition_filling_witness
 from ._analysis import PPGAnalysis
+from ._reverse_replay import SelectiveInclusionReplay, ReplayStatistics
 from ._multiscale import pool_scalar_field, multiscale_betti_curves, MultiscaleBetti
 from ._robustness import ppg_perturbation_probe, PerturbationReport, PerturbationSample
 
 __all__ = [
+    'SelectiveInclusionReplay', 'ReplayStatistics',
     'compute_ppg', 'PersistencePairingGraph', 'PersistenceNode', 'PersistenceEdge', 'CompactNodeTable',
     'build_cubical_complex', 'compress_discrete_tensor_streaming', 'load_image', 'export_csv',
     'betti_curves', 'BettiCurves', 'validate_ppg_betti', 'representative_cycles', 'CycleRepresentative',

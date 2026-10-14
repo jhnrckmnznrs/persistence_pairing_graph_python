@@ -17,6 +17,8 @@ import numpy as np
 
 _PAIR_STRUCT = Struct('<IBxH')
 _PAIR_DTYPE = np.dtype([('death', '<u4'), ('dimension', 'u1'), ('reserved', 'u1'), ('value', '<u2')])
+_REPLAY_STRUCT = Struct('<IIQI')
+_REPLAY_DTYPE = np.dtype([('birth', '<u4'), ('death', '<u4'), ('offset', '<u8'), ('length', '<u4')])
 
 
 def boundary_old_chain(ids, grid_shape: tuple[int, ...]) -> np.ndarray:
@@ -63,15 +65,38 @@ class StreamingLiftData:
     The data are appended in filtration order and take eight bytes per canceled
     pair on disk. Call ``close()`` when no longer needed.
     """
-    def __init__(self, grid_shape: tuple[int, ...], temp_dir=None):
+    def __init__(self, grid_shape: tuple[int, ...], temp_dir=None, *, retain_inclusion_trace=False):
         self.grid_shape = grid_shape
         self.scratch = TemporaryDirectory(prefix='ppg_chain_lift_', dir=temp_dir)
         self.pairs_path = Path(self.scratch.name) / 'pairs.bin'
         self._output = self.pairs_path.open('wb', buffering=1024 * 1024)
         self.n_pairs = 0
         self.pairs = None
+        self.retain_inclusion_trace = bool(retain_inclusion_trace)
+        self.replay_path = Path(self.scratch.name) / 'inclusions.bin'
+        self.tail_path = Path(self.scratch.name) / 'tails.u32'
+        self._replay_output = (self.replay_path.open('wb', buffering=1024 * 1024)
+                               if self.retain_inclusion_trace else None)
+        self._tail_output = (self.tail_path.open('wb', buffering=1024 * 1024)
+                             if self.retain_inclusion_trace else None)
+        self.replay_records = None
+        self.replay_tails = None
+        self.replay_tail_entries = 0
 
-    def add_pair(self, death_old: int, dimension: int, filtration_value: int):
+    def add_pair(self, death_old: int, dimension: int, filtration_value: int, *,
+                 birth_old=None, tail=None):
+        if self.retain_inclusion_trace:
+            if birth_old is None or tail is None:
+                raise ValueError('Inclusion trace requires canceled birth and differential tail')
+            if birth_old == death_old or len(tail) != len(set(tail)):
+                raise ValueError('Invalid elementary cancellation relation')
+            if len(tail) >= 2**32 or self.replay_tail_entries + len(tail) >= 2**64:
+                raise OverflowError('Inclusion trace exceeds record capacities')
+            self._replay_output.write(_REPLAY_STRUCT.pack(
+                birth_old, death_old, self.replay_tail_entries, len(tail)))
+            if tail:
+                np.asarray(tail, dtype='<u4').tofile(self._tail_output)
+            self.replay_tail_entries += len(tail)
         self._output.write(_PAIR_STRUCT.pack(death_old, dimension, filtration_value))
         self.n_pairs += 1
 
@@ -81,6 +106,15 @@ class StreamingLiftData:
             self._output = None
             if self.n_pairs:
                 self.pairs = np.memmap(self.pairs_path, mode='r', dtype=_PAIR_DTYPE)
+            if self._replay_output is not None:
+                self._replay_output.close()
+                self._replay_output = None
+                self._tail_output.close()
+                self._tail_output = None
+                if self.n_pairs:
+                    self.replay_records = np.memmap(self.replay_path, mode='r', dtype=_REPLAY_DTYPE)
+                if self.replay_tail_entries:
+                    self.replay_tails = np.memmap(self.tail_path, mode='r', dtype='<u4')
         return self
 
     def iter_pairs(self):
@@ -93,9 +127,16 @@ class StreamingLiftData:
         if self._output is not None:
             self._output.close()
             self._output = None
-        if isinstance(self.pairs, np.memmap):
-            self.pairs._mmap.close()
-        self.pairs = None
+        for name in ('pairs', 'replay_records', 'replay_tails'):
+            value = getattr(self, name)
+            if isinstance(value, np.memmap):
+                value._mmap.close()
+            setattr(self, name, None)
+        for name in ('_replay_output', '_tail_output'):
+            stream = getattr(self, name)
+            if stream is not None:
+                stream.close()
+                setattr(self, name, None)
         if self.scratch is not None:
             self.scratch.cleanup()
             self.scratch = None

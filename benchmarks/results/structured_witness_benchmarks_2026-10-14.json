@@ -1,0 +1,1123 @@
+{
+  "study": "Selected H1 and H2 death-event fillings on deterministic structured 3-D scalar images",
+  "date": "2026-10-14",
+  "software": "persistence-pairing-graph Python v0.9.0a4 base, dense-owner prototype v0.9.0a5",
+  "environment": {
+    "linux_memory_cgroup_bytes": 4294967296,
+    "cpu_quota_cores": 4,
+    "note": "Single process observations, not replicated trials. Some independent runs overlapped in wall-clock time. CPU timing is wall-clock."
+  },
+  "limits": {
+    "bounded_component_basis_columns": 60000,
+    "bounded_component_faces": 500000,
+    "high_budget_h2_basis_columns": 350000,
+    "high_budget_h2_component_faces": 1500000,
+    "packed_128_full_process_timeout_seconds": 360
+  },
+  "patterns": {
+    "mixed": "Separated solid torus and hollow sphere in 3-D.",
+    "lattice": "27 alternating solid tori and hollow spherical shells arranged in 3x3x3 blocks.",
+    "pants_cavity": "Extruded multilevel pair-of-pants filtration plus hollow spherical shell."
+  },
+  "methodology": "Compressed cubical persistent homology is computed once per subprocess using enriched cancellation tracing. A single source node is selected per dimension. Reverse replay executes first, followed by component correction if enabled. Peak RSS is sampled within each stage and separately for the full process. Witness algorithms verify exact original-grid boundaries and filtration thresholds; filling support hashes enable identity checks. Packed 128 jobs are intentionally stopped after 360 seconds, including setup. All timings are single observations.",
+  "runs": {
+    "mixed32_dense": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 32,
+          "pattern": "mixed",
+          "foreground_voxels": 818,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 32,
+          "pattern": "mixed",
+          "seconds": 1.37341,
+          "peak_mib": 100.129,
+          "original_cells": 274625,
+          "compressed_generators": 7,
+          "cancelled_pairs": 137309,
+          "enriched_tail_entries": 36990,
+          "selected": {
+            "1": 1,
+            "2": 2
+          },
+          "counts": {
+            "1": 1,
+            "2": 1
+          }
+        },
+        {
+          "stage": "index",
+          "size": 32,
+          "pattern": "mixed",
+          "seconds": 0.00256,
+          "peak_mib": 95.559,
+          "index_bytes": 1098500,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 32,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.00266,
+          "peak_mib": 100.32,
+          "filling_cells": 37,
+          "relation_cells": 28,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "ea1f82ac590d5610",
+          "relation_sha256": "2436d9731996bcbf",
+          "total_cancellations": 137309,
+          "replayed_nonzero_steps": 36,
+          "queried_original_columns": 65,
+          "visited_record_instances": 111,
+          "tails_read": 2,
+          "influence_entries": 65,
+          "trace_record_bytes": 2746180,
+          "trace_tail_bytes": 147960,
+          "owner_index_bytes": 1098500,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 32,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "component",
+          "status": "error",
+          "error_type": "MemoryError",
+          "error": "Incidence component exceeded max_basis_columns",
+          "seconds": 4.6366,
+          "peak_mib": 115.07
+        },
+        {
+          "stage": "witness",
+          "size": 32,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.01492,
+          "peak_mib": 107.121,
+          "filling_cells": 251,
+          "relation_cells": 268,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "1ea3174f66eec44d",
+          "relation_sha256": "508214def7f4df65",
+          "total_cancellations": 137309,
+          "replayed_nonzero_steps": 250,
+          "queried_original_columns": 584,
+          "visited_record_instances": 1255,
+          "tails_read": 2,
+          "influence_entries": 586,
+          "trace_record_bytes": 2746180,
+          "trace_tail_bytes": 147960,
+          "owner_index_bytes": 1098500,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 32,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "component",
+          "status": "ok",
+          "seconds": 1.98186,
+          "peak_mib": 152.41,
+          "filling_cells": 251,
+          "relation_cells": 268,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "1ea3174f66eec44d",
+          "relation_sha256": "508214def7f4df65",
+          "eligible_deaths": 32767,
+          "selected_deaths": 32767,
+          "visited_faces": 101376
+        },
+        {
+          "stage": "done",
+          "size": 32,
+          "pattern": "mixed",
+          "process_peak_mib": 155.352
+        }
+      ]
+    },
+    "mixed64_bounded": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 64,
+          "pattern": "mixed",
+          "foreground_voxels": 2994,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 64,
+          "pattern": "mixed",
+          "seconds": 10.22653,
+          "peak_mib": 122.633,
+          "original_cells": 2146689,
+          "compressed_generators": 7,
+          "cancelled_pairs": 1073341,
+          "enriched_tail_entries": 277633,
+          "selected": {
+            "1": 1,
+            "2": 2
+          },
+          "counts": {
+            "1": 1,
+            "2": 1
+          }
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.68157,
+          "peak_mib": 157.426,
+          "filling_cells": 174,
+          "relation_cells": 60,
+          "target_count": 0,
+          "death_level": 200,
+          "total_cancellations": 1073341,
+          "replayed_nonzero_steps": 173,
+          "queried_original_columns": 234,
+          "visited_record_instances": 522,
+          "tails_read": 3,
+          "influence_entries": 232,
+          "trace_record_bytes": 21466820,
+          "trace_tail_bytes": 1110532,
+          "owner_index_bytes": 17173456
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "component",
+          "status": "error",
+          "error_type": "MemoryError",
+          "error": "Incidence component exceeded max_basis_columns",
+          "seconds": 29.31606,
+          "peak_mib": 173.32
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 6.95612,
+          "peak_mib": 170.574,
+          "filling_cells": 1840,
+          "relation_cells": 1056,
+          "target_count": 0,
+          "death_level": 200,
+          "total_cancellations": 1073341,
+          "replayed_nonzero_steps": 1839,
+          "queried_original_columns": 3130,
+          "visited_record_instances": 9200,
+          "tails_read": 21,
+          "influence_entries": 3140,
+          "trace_record_bytes": 21466820,
+          "trace_tail_bytes": 1110532,
+          "owner_index_bytes": 17173456
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "component",
+          "status": "error",
+          "error_type": "MemoryError",
+          "error": "Incidence component exceeded max_basis_columns",
+          "seconds": 15.59604,
+          "peak_mib": 182.164
+        },
+        {
+          "stage": "done",
+          "size": 64,
+          "pattern": "mixed",
+          "process_peak_mib": 181.816
+        }
+      ]
+    },
+    "mixed64_h2_high_budget": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 64,
+          "pattern": "mixed",
+          "foreground_voxels": 2994,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 64,
+          "pattern": "mixed",
+          "seconds": 10.11809,
+          "peak_mib": 122.723,
+          "original_cells": 2146689,
+          "compressed_generators": 7,
+          "cancelled_pairs": 1073341,
+          "enriched_tail_entries": 277633,
+          "selected": {
+            "1": 1,
+            "2": 2
+          },
+          "counts": {
+            "1": 1,
+            "2": 1
+          }
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 7.82648,
+          "peak_mib": 162.012,
+          "filling_cells": 1840,
+          "relation_cells": 1056,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "052e1140495e861b",
+          "relation_sha256": "5602623fb0f2632b",
+          "total_cancellations": 1073341,
+          "replayed_nonzero_steps": 1839,
+          "queried_original_columns": 2896,
+          "visited_record_instances": 9200,
+          "tails_read": 21,
+          "influence_entries": 2908,
+          "trace_record_bytes": 21466820,
+          "trace_tail_bytes": 1110532,
+          "owner_index_bytes": 17173456
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "component",
+          "status": "ok",
+          "seconds": 72.37405,
+          "peak_mib": 557.125,
+          "filling_cells": 1840,
+          "relation_cells": 1056,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "052e1140495e861b",
+          "relation_sha256": "5602623fb0f2632b",
+          "eligible_deaths": 262143,
+          "selected_deaths": 262143,
+          "visited_faces": 798720
+        },
+        {
+          "stage": "done",
+          "size": 64,
+          "pattern": "mixed",
+          "process_peak_mib": 556.828
+        }
+      ]
+    },
+    "mixed64_dense": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 64,
+          "pattern": "mixed",
+          "foreground_voxels": 2994,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 64,
+          "pattern": "mixed",
+          "seconds": 9.81219,
+          "peak_mib": 122.773,
+          "original_cells": 2146689,
+          "compressed_generators": 7,
+          "cancelled_pairs": 1073341,
+          "enriched_tail_entries": 277633,
+          "selected": {
+            "1": 1,
+            "2": 2
+          },
+          "counts": {
+            "1": 1,
+            "2": 1
+          }
+        },
+        {
+          "stage": "index",
+          "size": 64,
+          "pattern": "mixed",
+          "seconds": 0.03322,
+          "peak_mib": 134.719,
+          "index_bytes": 8586756,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.00813,
+          "peak_mib": 134.738,
+          "filling_cells": 174,
+          "relation_cells": 60,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "16aa8ff3ab3b6e0c",
+          "relation_sha256": "9d0002f9fb384e23",
+          "total_cancellations": 1073341,
+          "replayed_nonzero_steps": 173,
+          "queried_original_columns": 234,
+          "visited_record_instances": 522,
+          "tails_read": 3,
+          "influence_entries": 232,
+          "trace_record_bytes": 21466820,
+          "trace_tail_bytes": 1110532,
+          "owner_index_bytes": 8586756,
+          "owner_storage": "dense",
+          "unique_influence_steps": 232
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.1133,
+          "peak_mib": 136.023,
+          "filling_cells": 1840,
+          "relation_cells": 1056,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "052e1140495e861b",
+          "relation_sha256": "5602623fb0f2632b",
+          "total_cancellations": 1073341,
+          "replayed_nonzero_steps": 1839,
+          "queried_original_columns": 3130,
+          "visited_record_instances": 9200,
+          "tails_read": 21,
+          "influence_entries": 3140,
+          "trace_record_bytes": 21466820,
+          "trace_tail_bytes": 1110532,
+          "owner_index_bytes": 8586756,
+          "owner_storage": "dense",
+          "unique_influence_steps": 3131
+        },
+        {
+          "stage": "done",
+          "size": 64,
+          "pattern": "mixed",
+          "process_peak_mib": 135.793
+        }
+      ]
+    },
+    "lattice64_bounded": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 64,
+          "pattern": "lattice",
+          "foreground_voxels": 9734,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 64,
+          "pattern": "lattice",
+          "seconds": 10.51501,
+          "peak_mib": 123.625,
+          "original_cells": 2146689,
+          "compressed_generators": 107,
+          "cancelled_pairs": 1073291,
+          "enriched_tail_entries": 325492,
+          "selected": {
+            "1": 26,
+            "2": 39
+          },
+          "counts": {
+            "1": 13,
+            "2": 14
+          }
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "lattice",
+          "q": 1,
+          "node_id": 26,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.26542,
+          "peak_mib": 161.77,
+          "filling_cells": 40,
+          "relation_cells": 28,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "90e0069e8218f22a",
+          "relation_sha256": "ba975f7df8123169",
+          "total_cancellations": 1073291,
+          "replayed_nonzero_steps": 39,
+          "queried_original_columns": 68,
+          "visited_record_instances": 120,
+          "tails_read": 2,
+          "influence_entries": 66,
+          "trace_record_bytes": 21465820,
+          "trace_tail_bytes": 1301968,
+          "owner_index_bytes": 17172656
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "lattice",
+          "q": 1,
+          "node_id": 26,
+          "solver": "component",
+          "status": "error",
+          "error_type": "MemoryError",
+          "error": "Incidence component exceeded max_basis_columns",
+          "seconds": 28.79711,
+          "peak_mib": 186.344
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "lattice",
+          "q": 2,
+          "node_id": 39,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 1.68026,
+          "peak_mib": 182.527,
+          "filling_cells": 413,
+          "relation_cells": 372,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "4b67652b1641d3ce",
+          "relation_sha256": "a492f591248ffb00",
+          "total_cancellations": 1073291,
+          "replayed_nonzero_steps": 412,
+          "queried_original_columns": 853,
+          "visited_record_instances": 2065,
+          "tails_read": 10,
+          "influence_entries": 851,
+          "trace_record_bytes": 21465820,
+          "trace_tail_bytes": 1301968,
+          "owner_index_bytes": 17172656
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "lattice",
+          "q": 2,
+          "node_id": 39,
+          "solver": "component",
+          "status": "error",
+          "error_type": "MemoryError",
+          "error": "Incidence component exceeded max_basis_columns",
+          "seconds": 15.92724,
+          "peak_mib": 208.613
+        },
+        {
+          "stage": "done",
+          "size": 64,
+          "pattern": "lattice",
+          "process_peak_mib": 208.121
+        }
+      ]
+    },
+    "pants_cavity64_bounded": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "foreground_voxels": 1947,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "seconds": 9.99063,
+          "peak_mib": 122.617,
+          "original_cells": 2146689,
+          "compressed_generators": 15,
+          "cancelled_pairs": 1073337,
+          "enriched_tail_entries": 282892,
+          "selected": {
+            "1": 3,
+            "2": 6
+          },
+          "counts": {
+            "1": 3,
+            "2": 1
+          }
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "q": 1,
+          "node_id": 3,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.6685,
+          "peak_mib": 157.871,
+          "filling_cells": 208,
+          "relation_cells": 72,
+          "target_count": 1,
+          "death_level": 80,
+          "filling_sha256": "ca85f2d2a147cfc3",
+          "relation_sha256": "a0516d9df4453b08",
+          "total_cancellations": 1073337,
+          "replayed_nonzero_steps": 206,
+          "queried_original_columns": 280,
+          "visited_record_instances": 618,
+          "tails_read": 80,
+          "influence_entries": 280,
+          "trace_record_bytes": 21466740,
+          "trace_tail_bytes": 1131568,
+          "owner_index_bytes": 17173392
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "q": 1,
+          "node_id": 3,
+          "solver": "component",
+          "status": "ok",
+          "seconds": 0.14977,
+          "peak_mib": 169.453,
+          "filling_cells": 208,
+          "relation_cells": 72,
+          "target_count": 1,
+          "death_level": 80,
+          "filling_sha256": "ca85f2d2a147cfc3",
+          "relation_sha256": "a0516d9df4453b08",
+          "eligible_deaths": 6152,
+          "selected_deaths": 1598,
+          "visited_faces": 2632
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "q": 2,
+          "node_id": 6,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 6.23786,
+          "peak_mib": 169.531,
+          "filling_cells": 1688,
+          "relation_cells": 988,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "fa0fb71125a59d51",
+          "relation_sha256": "9bc877f2e791a159",
+          "total_cancellations": 1073337,
+          "replayed_nonzero_steps": 1687,
+          "queried_original_columns": 2956,
+          "visited_record_instances": 8440,
+          "tails_read": 22,
+          "influence_entries": 2954,
+          "trace_record_bytes": 21466740,
+          "trace_tail_bytes": 1131568,
+          "owner_index_bytes": 17173392
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "q": 2,
+          "node_id": 6,
+          "solver": "component",
+          "status": "error",
+          "error_type": "MemoryError",
+          "error": "Incidence component exceeded max_basis_columns",
+          "seconds": 15.66637,
+          "peak_mib": 180.188
+        },
+        {
+          "stage": "done",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "process_peak_mib": 180.055
+        }
+      ]
+    },
+    "pants_cavity64_dense": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "foreground_voxels": 1947,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "seconds": 10.01186,
+          "peak_mib": 122.551,
+          "original_cells": 2146689,
+          "compressed_generators": 15,
+          "cancelled_pairs": 1073337,
+          "enriched_tail_entries": 282892,
+          "selected": {
+            "1": 3,
+            "2": 6
+          },
+          "counts": {
+            "1": 3,
+            "2": 1
+          }
+        },
+        {
+          "stage": "index",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "seconds": 0.02239,
+          "peak_mib": 101.234,
+          "index_bytes": 8586756,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "q": 1,
+          "node_id": 3,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.01087,
+          "peak_mib": 134.184,
+          "filling_cells": 208,
+          "relation_cells": 72,
+          "target_count": 1,
+          "death_level": 80,
+          "filling_sha256": "ca85f2d2a147cfc3",
+          "relation_sha256": "a0516d9df4453b08",
+          "total_cancellations": 1073337,
+          "replayed_nonzero_steps": 206,
+          "queried_original_columns": 280,
+          "visited_record_instances": 618,
+          "tails_read": 80,
+          "influence_entries": 280,
+          "trace_record_bytes": 21466740,
+          "trace_tail_bytes": 1131568,
+          "owner_index_bytes": 8586756,
+          "owner_storage": "dense",
+          "unique_influence_steps": 278
+        },
+        {
+          "stage": "witness",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "q": 2,
+          "node_id": 6,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.07228,
+          "peak_mib": 135.211,
+          "filling_cells": 1688,
+          "relation_cells": 988,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "fa0fb71125a59d51",
+          "relation_sha256": "9bc877f2e791a159",
+          "total_cancellations": 1073337,
+          "replayed_nonzero_steps": 1687,
+          "queried_original_columns": 2956,
+          "visited_record_instances": 8440,
+          "tails_read": 22,
+          "influence_entries": 2954,
+          "trace_record_bytes": 21466740,
+          "trace_tail_bytes": 1131568,
+          "owner_index_bytes": 8586756,
+          "owner_storage": "dense",
+          "unique_influence_steps": 2952
+        },
+        {
+          "stage": "done",
+          "size": 64,
+          "pattern": "pants_cavity",
+          "process_peak_mib": 134.898
+        }
+      ],
+      "process_status": {
+        "scenario": "pants_cavity64_dense",
+        "code": 0,
+        "elapsed_s": 10.85
+      }
+    },
+    "mixed128_packed_timeout": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 128,
+          "pattern": "mixed",
+          "foreground_voxels": 23961,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 128,
+          "pattern": "mixed",
+          "seconds": 79.0147,
+          "peak_mib": 297.797,
+          "original_cells": 16974593,
+          "compressed_generators": 7,
+          "cancelled_pairs": 8487293,
+          "enriched_tail_entries": 2157983,
+          "selected": {
+            "1": 1,
+            "2": 2
+          },
+          "counts": {
+            "1": 1,
+            "2": 1
+          }
+        },
+        {
+          "stage": "witness",
+          "size": 128,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 65.93,
+          "peak_mib": 643.859,
+          "filling_cells": 730,
+          "relation_cells": 114,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "b17d7cc9fa210b56",
+          "relation_sha256": "8a6863d9faf818cd",
+          "total_cancellations": 8487293,
+          "replayed_nonzero_steps": 729,
+          "queried_original_columns": 844,
+          "visited_record_instances": 2190,
+          "tails_read": 7,
+          "influence_entries": 846,
+          "trace_record_bytes": 169745860,
+          "trace_tail_bytes": 8631932,
+          "owner_index_bytes": 135796688
+        }
+      ]
+    },
+    "lattice128_packed_timeout": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 128,
+          "pattern": "lattice",
+          "foreground_voxels": 76834,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 128,
+          "pattern": "lattice",
+          "seconds": 79.84585,
+          "peak_mib": 298.605,
+          "original_cells": 16974593,
+          "compressed_generators": 107,
+          "cancelled_pairs": 8487243,
+          "enriched_tail_entries": 2336754,
+          "selected": {
+            "1": 26,
+            "2": 39
+          },
+          "counts": {
+            "1": 13,
+            "2": 14
+          }
+        },
+        {
+          "stage": "index",
+          "size": 128,
+          "pattern": "lattice",
+          "seconds": 1.51474,
+          "peak_mib": 739.57,
+          "index_bytes": 135795888
+        },
+        {
+          "stage": "witness",
+          "size": 128,
+          "pattern": "lattice",
+          "q": 1,
+          "node_id": 26,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 18.20541,
+          "peak_mib": 551.164,
+          "filling_cells": 187,
+          "relation_cells": 56,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "9ff509286ca3f275",
+          "relation_sha256": "20c0f811ef87884b",
+          "total_cancellations": 8487243,
+          "replayed_nonzero_steps": 186,
+          "queried_original_columns": 243,
+          "visited_record_instances": 561,
+          "tails_read": 6,
+          "influence_entries": 243,
+          "trace_record_bytes": 169744860,
+          "trace_tail_bytes": 9347016,
+          "owner_index_bytes": 135795888
+        }
+      ]
+    },
+    "mixed128_dense": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 128,
+          "pattern": "mixed",
+          "foreground_voxels": 23961,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 128,
+          "pattern": "mixed",
+          "seconds": 82.84713,
+          "peak_mib": 297.914,
+          "original_cells": 16974593,
+          "compressed_generators": 7,
+          "cancelled_pairs": 8487293,
+          "enriched_tail_entries": 2157983,
+          "selected": {
+            "1": 1,
+            "2": 2
+          },
+          "counts": {
+            "1": 1,
+            "2": 1
+          }
+        },
+        {
+          "stage": "index",
+          "size": 128,
+          "pattern": "mixed",
+          "seconds": 0.17022,
+          "peak_mib": 412.934,
+          "index_bytes": 67898372,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 128,
+          "pattern": "mixed",
+          "q": 1,
+          "node_id": 1,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.02533,
+          "peak_mib": 355.062,
+          "filling_cells": 730,
+          "relation_cells": 114,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "b17d7cc9fa210b56",
+          "relation_sha256": "8a6863d9faf818cd",
+          "total_cancellations": 8487293,
+          "replayed_nonzero_steps": 729,
+          "queried_original_columns": 844,
+          "visited_record_instances": 2190,
+          "tails_read": 7,
+          "influence_entries": 846,
+          "trace_record_bytes": 169745860,
+          "trace_tail_bytes": 8631932,
+          "owner_index_bytes": 67898372,
+          "owner_storage": "dense",
+          "unique_influence_steps": 844
+        },
+        {
+          "stage": "witness",
+          "size": 128,
+          "pattern": "mixed",
+          "q": 2,
+          "node_id": 2,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.60053,
+          "peak_mib": 361.527,
+          "filling_cells": 14780,
+          "relation_cells": 4230,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "da0afa0beae93b0e",
+          "relation_sha256": "1c742f54b4d97881",
+          "total_cancellations": 8487293,
+          "replayed_nonzero_steps": 14779,
+          "queried_original_columns": 19854,
+          "visited_record_instances": 73900,
+          "tails_read": 80,
+          "influence_entries": 19876,
+          "trace_record_bytes": 169745860,
+          "trace_tail_bytes": 8631932,
+          "owner_index_bytes": 67898372,
+          "owner_storage": "dense",
+          "unique_influence_steps": 19863
+        },
+        {
+          "stage": "done",
+          "size": 128,
+          "pattern": "mixed",
+          "process_peak_mib": 419.535
+        }
+      ],
+      "process_status": {
+        "scenario": "mixed128_dense",
+        "code": 0,
+        "elapsed_s": 84.39
+      }
+    },
+    "lattice128_dense": {
+      "stages": [
+        {
+          "stage": "start",
+          "size": 128,
+          "pattern": "lattice",
+          "foreground_voxels": 76834,
+          "cgroup_memory_max": "4294967296"
+        },
+        {
+          "stage": "built",
+          "size": 128,
+          "pattern": "lattice",
+          "seconds": 83.76546,
+          "peak_mib": 298.605,
+          "original_cells": 16974593,
+          "compressed_generators": 107,
+          "cancelled_pairs": 8487243,
+          "enriched_tail_entries": 2336754,
+          "selected": {
+            "1": 26,
+            "2": 39
+          },
+          "counts": {
+            "1": 13,
+            "2": 14
+          }
+        },
+        {
+          "stage": "index",
+          "size": 128,
+          "pattern": "lattice",
+          "seconds": 0.17468,
+          "peak_mib": 408.316,
+          "index_bytes": 67898372,
+          "owner_storage": "dense"
+        },
+        {
+          "stage": "witness",
+          "size": 128,
+          "pattern": "lattice",
+          "q": 1,
+          "node_id": 26,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.00796,
+          "peak_mib": 356.445,
+          "filling_cells": 187,
+          "relation_cells": 56,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "9ff509286ca3f275",
+          "relation_sha256": "20c0f811ef87884b",
+          "total_cancellations": 8487243,
+          "replayed_nonzero_steps": 186,
+          "queried_original_columns": 243,
+          "visited_record_instances": 561,
+          "tails_read": 6,
+          "influence_entries": 243,
+          "trace_record_bytes": 169744860,
+          "trace_tail_bytes": 9347016,
+          "owner_index_bytes": 67898372,
+          "owner_storage": "dense",
+          "unique_influence_steps": 242
+        },
+        {
+          "stage": "witness",
+          "size": 128,
+          "pattern": "lattice",
+          "q": 2,
+          "node_id": 39,
+          "solver": "replay",
+          "status": "ok",
+          "seconds": 0.13862,
+          "peak_mib": 358.738,
+          "filling_cells": 3481,
+          "relation_cells": 1596,
+          "target_count": 0,
+          "death_level": 200,
+          "filling_sha256": "0740c34697c09a40",
+          "relation_sha256": "0a9ca7e834a1cbfe",
+          "total_cancellations": 8487243,
+          "replayed_nonzero_steps": 3480,
+          "queried_original_columns": 5320,
+          "visited_record_instances": 17405,
+          "tails_read": 34,
+          "influence_entries": 5320,
+          "trace_record_bytes": 169744860,
+          "trace_tail_bytes": 9347016,
+          "owner_index_bytes": 67898372,
+          "owner_storage": "dense",
+          "unique_influence_steps": 5318
+        },
+        {
+          "stage": "done",
+          "size": 128,
+          "pattern": "lattice",
+          "process_peak_mib": 420.879
+        }
+      ],
+      "process_status": {
+        "scenario": "lattice128_dense",
+        "code": 0,
+        "elapsed_s": 85.15
+      }
+    }
+  }
+}
