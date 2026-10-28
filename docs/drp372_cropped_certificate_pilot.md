@@ -40,6 +40,44 @@ paper. Download acquisition and QC were previously handled by
 `drp372_finalize_cohort_v1_1.py`. They are separate user research
 scripts; **the PPG repo does not bundle the 119 binary MAT files**.
 
+## Required preflight: verify historical Stage E before preparing any new SEDT
+
+The already verified Stage G freeze has 119 complete specimens with
+matching Stage F node and edge hashes, **but it records
+`levels_per_voxel=64.0` and `zero_code=32768`**. Earlier prototype
+adapter revisions mistakenly assumed SEDT scale 32. The source Stage E
+script and actual encoded files must settle this discrepancy.
+
+Run the **read-only** preflight from this repository:
+
+```bash
+python benchmarks/inspect_drp372_reuse.py \\
+  --workspace "$HOME/temp/drp372" \\
+  --output "$HOME/temp/drp372/ppg_reuse_preflight.json"
+```
+
+It summarizes saved Stage E/F/G manifest schemas, sample-set consistency,
+original SEDT source-code constants and project/family fold crossings.
+It does **not** open any full 256³ array or modify old results. Paths
+embedded in older Stage G summaries may refer to a former
+`~/Desktop/drp372` location; the preflight resolves files in the
+current workspace instead.
+
+**Do not run the SEDT crop adapter with an unverified encoding scale.**
+The adapter now requires explicit `--levels-per-voxel S` whenever
+`--filtrations` contains `sedt`. Use the saved Stage E parameters
+and inspect the original `drp372_prepare_sedt.py` before specifying
+this value. If Stage E already stores uint16 256³ SEDT arrays, prefer
+reusing them without recomputing the Euclidean distances; first verify
+their actual filenames, axis order, hash and quantization. The current
+adapter still computes SEDT from the original binary when selected.
+
+**Validation-fold caution:** Stage G's project-group labels DRP16,
+DRP317, and DRP374 occur in multiple primary folds. This is not
+project-disjoint validation as recorded; check the original grouping
+script for whether folds were built around a different family/grouping
+criterion before reusing earlier model scores.
+
 ## Stage 1: lossless original-voxel pilot crops
 
 ```sh
@@ -52,14 +90,15 @@ python benchmarks/prepare_drp372_cohort.py \
   --limit 5 \
   --sizes 12 24 \
   --origins center quarter \
-  --filtrations sedt binary
+  --filtrations sedt binary \\
+  --levels-per-voxel YOUR_VERIFIED_STAGE_E_SCALE
 ```
 
 This creates:
 
 - `cohort_manifest.json`: directly accepted by
   `benchmarks/certificate_audit.py`.
-- `volumes/<id>.npy`: 2D/3D uint8 arrays (here native 3D crops).
+- `volumes/<id>.npy`: native 3D SEDT uint16 crops and/or binary uint8 controls.
 - `crop_provenance.csv`: sample/source file hashes, input coordinate
   offsets, phase labels, pore fraction, source-group labels and the
   strictly named `permeability (lus)` value where available.
@@ -75,14 +114,14 @@ is computed on the full original 256³ grid before cropping:
 ```python
 s = scipy.ndimage.distance_transform_edt(bin == 1) \
     - scipy.ndimage.distance_transform_edt(bin == 0)
-q = np.uint16(np.clip(np.rint(32768 + 32*s), 0, 65535))
+q = np.uint16(np.clip(np.rint(32768 + S*s), 0, 65535))
 ```
 
 Negative `s` is pore and positive `s` is solid. The primary
 `sedt` outputs are uint16, and the `binary` outputs are separate
-uint8 controls. The offset 32768, scale 32, and SciPy default
-boundary convention reproduce the earlier PPG experiment's stated
-encoding. No per-sample min-max normalization is applied.
+uint8 controls. The offset 32768 and explicitly verified scale `S` should match the
+historical Stage E encoding. The original script must also confirm the
+sign convention, array axes and distance-transform boundary semantics. No per-sample min-max normalization is applied.
 Because the **full-volume** transform is computed first, the interior
 crop distances remain those of the complete rock. However, the
 resulting cropped cubical complex still has artificial topological
