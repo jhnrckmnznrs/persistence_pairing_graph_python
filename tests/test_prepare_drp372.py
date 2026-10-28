@@ -58,7 +58,8 @@ def test_native_crop_preserves_orientation_provenance_and_phase_values(tmp_path)
     out = tmp_path / "prepared"
     result = drp.generate(
         cohort_csv=csvpath,root=root,output=out,
-        limit=1,crop_sizes=(12,),origins=("center","quarter"))
+        limit=1,crop_sizes=(12,),origins=("center","quarter"),
+        filtrations=("binary",))
     assert result["samples"] == 1
     assert result["crops"] == 2
     assert result["permeability_with_valid_source_unit"] == 2
@@ -81,14 +82,16 @@ def test_native_crop_preserves_orientation_provenance_and_phase_values(tmp_path)
     assert rows[0]["filtration"] == "binary_lower_star"
     with pytest.raises(FileExistsError):
         drp.generate(cohort_csv=csvpath,root=root,output=out,
-                     limit=1,crop_sizes=(12,),origins=("center",))
+                     limit=1,crop_sizes=(12,),origins=("center",),
+                     filtrations=("binary",))
 
 
 def test_adapter_pilot_runs_complete_ppg_audit_on_h2_shell(tmp_path):
     root, csvpath, _ = build_fixture(tmp_path)
     prepared = tmp_path / "prepared"
     drp.generate(cohort_csv=csvpath,root=root,output=prepared,
-                 crop_sizes=(12,),origins=("center",),limit=1)
+                 crop_sizes=(12,),origins=("center",),limit=1,
+                 filtrations=("sedt",), levels_per_voxel=32)
     script=Path(__file__).resolve().parents[1]/"benchmarks"/"certificate_audit.py"
     run=subprocess.run([
         sys.executable,str(script),"run",
@@ -96,12 +99,13 @@ def test_adapter_pilot_runs_complete_ppg_audit_on_h2_shell(tmp_path):
         "--output",str(tmp_path/"audit"),
         "--radii","0","1","2","4",
         "--max-events-per-dimension","1",
+        "--no-global",
         "--max-reference-queries","1",
         "--reference-max-grid-cells","30000",
         "--timeout-s","90",
     ],capture_output=True,text=True,timeout=100,check=False)
     assert run.returncode==0,run.stdout+"\n"+run.stderr
-    rows=[json.loads(x) for x in (tmp_path/"audit"/"339_02__s12__center.jsonl")
+    rows=[json.loads(x) for x in (tmp_path/"audit"/"339_02__s12__center__sedt.jsonl")
           .read_text().splitlines()]
     events=[x for x in rows if x["kind"]=="event"]
     assert any(x["dimension"]==2 and x["status"]=="ok" for x in events)
@@ -118,7 +122,8 @@ def test_cohort_filters_and_hash_checks(tmp_path):
     root, csvpath, mat = build_fixture(tmp_path)
     with pytest.raises(ValueError,match="absent"):
         drp.generate(cohort_csv=csvpath,root=root,
-                     output=tmp_path/"wrong",sample_ids=["777_99"])
+                     output=tmp_path/"wrong",sample_ids=["777_99"],
+                     filtrations=("binary",))
     with pytest.raises(ValueError,match="checksum"):
         with csvpath.open("r",newline="") as f:
             rows=list(csv.DictReader(f))
@@ -128,4 +133,32 @@ def test_cohort_filters_and_hash_checks(tmp_path):
             rows[0]["binary_sha256"]="0"*64
             w.writerows(rows)
         drp.generate(cohort_csv=csvpath,root=root,
-                     output=tmp_path/"wrong_hash")
+                     output=tmp_path/"wrong_hash",filtrations=("binary",))
+
+
+def test_signed_edt_phase_polarity_and_historical_encoding():
+    scipy = pytest.importorskip("scipy")
+    full = np.zeros((5,5,5),dtype=np.uint8)
+    full[2,2,2]=1
+    q = drp.signed_edt_uint16(full,levels_per_voxel=32)
+    assert q.dtype == np.uint16
+    assert int(q[2,2,2]) == 32768 + 32
+    assert int(q[2,2,1]) == 32768 - 32
+    assert int(q[2,2,0]) == 32768 - 64
+    assert int(q.min()) < 32768 < int(q.max())
+    with pytest.raises(ValueError,match="both pore and solid"):
+        drp.signed_edt_uint16(np.zeros((4,4,4),dtype=np.uint8),levels_per_voxel=32)
+
+
+def test_sedt_requires_explicit_verified_scale(tmp_path):
+    root, csvpath, _ = build_fixture(tmp_path)
+    with pytest.raises(ValueError, match="levels-per-voxel"):
+        drp.generate(
+            cohort_csv=csvpath, root=root, output=tmp_path/"bad_sedt",
+            limit=1, crop_sizes=(12,), origins=("center",),
+            filtrations=("sedt",))
+    input_mask = np.zeros((5,5,5), dtype=np.uint8)
+    input_mask[2,2,2] = 1
+    q = drp.signed_edt_uint16(input_mask, levels_per_voxel=64)
+    assert int(q[2,2,2]) == 32768+64
+    assert int(q[2,2,1]) == 32768-64
