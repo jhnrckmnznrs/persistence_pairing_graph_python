@@ -1,0 +1,27 @@
+name: Research 3D locality diagnostics
+
+on:
+  push:
+    branches:
+      - research/selective-relative-incidence
+  workflow_dispatch:
+
+jobs:
+  synthetic-3d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Measure selective reverse replay closure
+        run: python benchmarks/investigate_dependency_closure.py --sizes 8 12 16 --samples 8 --json benchmarks/results/research_closure.json
+      - name: Compare local relative incidence and global reference
+        run: python benchmarks/benchmark_selective_relative.py --sizes 5 7 9
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-locality-diagnostics
+          path: benchmarks/results/research_closure.json
