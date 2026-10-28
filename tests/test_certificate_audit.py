@@ -128,7 +128,18 @@ def test_npy_inputs_and_no_events_are_reported(tmp_path):
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     summary = json.loads((tmp_path / "out/summary.json").read_text())
     assert summary["events"] == 0
+    assert summary["zero_event_volumes"] == ["constant"]
+    inventory = summary["event_inventories"]["constant"]
+    assert inventory.get("1", {}).get("finite_positive", 0) == 0
+    assert inventory.get("2", {}).get("finite_positive", 0) == 0
     assert summary["status"] == "complete"
+    records = [json.loads(x) for x in
+               (tmp_path / "out/constant.jsonl").read_text().splitlines()]
+    v = next(x for x in records if x["kind"] == "volume")
+    assert v["filtration_distinct_levels"] == 1
+    assert v["filtration_min"] == v["filtration_max"] == 0
+    assert next(x for x in records if x["kind"] == "event_inventory")[
+        "selection_status"] == "no_eligible_finite_positive_h1_h2"
     assert (tmp_path / "out/regions.csv").is_file()
     again = _run(manifest, tmp_path / "out", "--no-global")
     assert again.returncode != 0
@@ -163,3 +174,36 @@ def test_explicit_bad_event_index_is_not_silently_ignored(tmp_path):
     assert result.returncode == 1
     summary = json.loads((tmp_path / "audit/summary.json").read_text())
     assert summary["status"] == "failed"
+
+
+def test_event_inventory_distinguishes_zero_persistence_and_essential_nodes():
+    from persistence_pairing_graph._graph import PersistenceNode
+    nodes = [
+        PersistenceNode(1, 1, 2, 10, 10),
+        PersistenceNode(1, 3, 4, 10, 12),
+        PersistenceNode(2, 5, None, 12, float("inf")),
+        PersistenceNode(0, 6, 7, 2, 7),
+    ]
+    inv = audit.count_persistence_events(nodes)
+    assert inv["1"] == {
+        "finite_positive": 1,
+        "finite_zero": 1,
+        "essential": 0,
+        "max_finite_persistence": 2.0,
+    }
+    assert inv["2"]["essential"] == 1
+    assert inv["0"]["finite_positive"] == 1
+
+
+def test_uint16_low_codes_histogram_and_signed_offset_counts():
+    low = np.array([1, 4, 1], dtype=np.uint16).reshape((1, 1, 3))
+    q = audit.summarize_filtration(low)
+    assert q["filtration_distinct_levels"] == 2
+    assert q["code_below_32768"] == 3
+    assert q["code_at_32768"] == 0
+    assert q["code_above_32768"] == 0
+    signed = np.array([32704, 32768, 32832],dtype=np.uint16).reshape((1,1,3))
+    got = audit.summarize_filtration(signed)
+    assert got["filtration_distinct_levels"] == 3
+    assert (got["code_below_32768"], got["code_at_32768"],
+            got["code_above_32768"]) == (1,1,1)
