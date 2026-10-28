@@ -24,5 +24,6 @@ jobs:
       - name: Research 3D closure diagnostics (Python 3.12 only)
         if: ${{ matrix.python-version == '3.12' && github.head_ref == 'research/selective-relative-incidence' }}
         run: |
-          python benchmarks/investigate_dependency_closure.py --sizes 8 12 16 --samples 8
+          python benchmarks/investigate_dependency_closure.py --sizes 8 12 16 24 32 --samples 8
           python benchmarks/benchmark_selective_relative.py --sizes 5 7 9
+          python benchmarks/benchmark_event_closure_3d.py --sizes 5 7 9
