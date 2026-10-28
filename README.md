@@ -645,3 +645,8 @@ For a complete PPG death-event relation, `certify_local_filling` decides whether
 ### Relative fillings and replay closure diagnostics (experimental)
 
 The [relative locality module](docs/relative_locality_and_dependency_closure.md) allows all old-chain corrections while restricting newly entering filling cells to a chosen box; it returns either an exact filling or a dual obstruction. Opt-in reverse-replay closure statistics measure the number and depth of cancellation dependencies actually encountered by a selected PPG event. These are bounded reference tools, not new large-volume solvers.
+
+
+### Selective relative queries (research)
+
+The relative filling oracle now supports `old_solver='component'` (exact old-boundary incidence closure, default) and `old_solver='full'` (independent global reference). When an existing verified transition witness fits the proposed new-cell region, the query returns that certificate without a second elimination; otherwise it runs the exact restricted solver. See [the mathematical and 3D performance audit](docs/research_selective_relative_queries.md). The current incidence strategy remains a bounded reference method: connected 3D filtrations often force nearly all old columns to be considered.
