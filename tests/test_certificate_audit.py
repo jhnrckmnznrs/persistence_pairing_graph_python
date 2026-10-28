@@ -207,3 +207,50 @@ def test_uint16_low_codes_histogram_and_signed_offset_counts():
     assert got["filtration_distinct_levels"] == 3
     assert (got["code_below_32768"], got["code_at_32768"],
             got["code_above_32768"]) == (1,1,1)
+
+
+def test_ablation_excludes_unique_h2_death_cell_and_returns_verified_dual(tmp_path):
+    """A unique high-valued cube kills an H2 shell; excluding it forbids death."""
+    image=np.zeros((5,5,5),dtype=np.uint8)
+    image[2,2,2]=90
+    np.save(tmp_path/"shell.npy",image)
+    manifest=_manifest(tmp_path/"manifest.json",[
+        {"id":"shell","path":"shell.npy"}])
+    result=_run(
+        manifest,tmp_path/"ablated",
+        "--exclude-critical-cell","--no-global",
+        "--reference-max-grid-cells","5000")
+    assert result.returncode==0,result.stdout+"\n"+result.stderr
+    summary=json.loads((tmp_path/"ablated/summary.json").read_text())
+    assert summary["exclude_critical_cell"] is True
+    assert summary["events"]>=1
+    assert summary["critical_cell_included_regions"]==0
+    assert summary["infeasible_regions"]>=1
+    assert summary["verified_dual_obstructions"]>=1
+    rows=[json.loads(t) for t in
+          (tmp_path/"ablated/shell.jsonl").read_text().splitlines()]
+    regions=[x for x in rows if x["kind"]=="region"]
+    assert any(x.get("critical_cell_is_new_candidate") is True
+               for x in regions if x["radius_voxels"]=="0")
+    assert all(x.get("critical_cell_included") is False for x in regions)
+    assert any(x.get("dual_verified_on_relation") is True for x in regions)
+    assert any(x.get("reference_status")=="verified" for x in regions)
+
+
+def test_default_regions_report_critical_cell_without_excluding_it(tmp_path):
+    image=np.zeros((5,5,5),dtype=np.uint8)
+    image[2,2,2]=90
+    np.save(tmp_path/"shell.npy",image)
+    manifest=_manifest(tmp_path/"manifest.json",[
+        {"id":"shell","path":"shell.npy"}])
+    result=_run(manifest,tmp_path/"control","--no-global")
+    assert result.returncode==0,result.stdout+"\n"+result.stderr
+    summary=json.loads((tmp_path/"control/summary.json").read_text())
+    assert summary["exclude_critical_cell"] is False
+    regions=[json.loads(t) for t in
+             (tmp_path/"control/shell.jsonl").read_text().splitlines()]
+    regions=[x for x in regions if x["kind"]=="region"]
+    assert any(x["radius_voxels"]=="0"
+               and x.get("critical_cell_is_new_candidate") is True
+               and x.get("critical_cell_included") is True
+               and x.get("feasible") is True for x in regions)
