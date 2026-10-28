@@ -6,8 +6,13 @@ The earlier DRP-372 cohort freeze has this layout:
   drp372_256/cohort_qc/complete_pairs.csv
 
 The MATLAB-v7.3 HDF5 variable 'bin' is a 256^3 binary array with
-0 = pore and 1 = solid. Native-resolution *crops* preserve the exact
-original voxel values; there is NO resizing, interpolation or thresholding.
+0 = pore and 1 = solid. The primary historical filtration is the
+full-volume signed Euclidean distance transform (SEDT), negative in pore
+and positive in solid, encoded as uint16:
+  q = clip(round(32768 + 32*(d_solid - d_pore)), 0, 65535).
+Distance transforms are calculated on the FULL 256^3 original domain
+before extracting native-resolution crops. The optional binary filtration
+is a separate control. No resizing or interpolation is performed.
 
 The output is a manifest compatible with certificate_audit.py plus an
 independent CSV recording crop origins, porosities, raw file hashes and
@@ -32,6 +37,35 @@ import numpy as np
 
 SAMPLE_NAME = re.compile(r"^[0-9]+_[0-9]+(?:_[0-9]+)?$")
 ORIGINS = ("center", "quarter", "three_quarter")
+FILTRATIONS = ("sedt", "binary")
+
+
+def signed_edt_uint16(binary: np.ndarray) -> np.ndarray:
+    """Reproduce the historical signed-distance uint16 filtration encoding.
+
+    Negative in pore (bin=0), positive in solid (bin=1), unit voxel
+    spacing. SciPy's default array-edge convention is retained.
+    Always apply this to the FULL original domain before cropping;
+    otherwise the transform develops artificial crop-boundary distances.
+    """
+    try:
+        from scipy.ndimage import distance_transform_edt
+    except ImportError as exc:
+        raise RuntimeError("Signed EDT requires scipy; install '.[rock]'") from exc
+    binary = np.asarray(binary)
+    if binary.ndim != 3 or not np.isin(binary,[0,1]).all():
+        raise ValueError("SEDT input must be a 3D binary pore/solid array")
+    if not np.any(binary == 0) or not np.any(binary == 1):
+        raise ValueError("SEDT requires both pore and solid phases")
+    signed = distance_transform_edt(binary == 1)
+    signed -= distance_transform_edt(binary == 0)
+    signed *= 32.0
+    signed += 32768.0
+    np.rint(signed,out=signed)
+    np.clip(signed,0,65535,out=signed)
+    return signed.astype(np.uint16)
+
+
 
 
 def sha256(path: Path) -> str:
@@ -104,6 +138,7 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
              limit: int | None = 5,
              crop_sizes: tuple[int, ...] = (12, 24),
              origins: tuple[str, ...] = ("center", "quarter"),
+             filtrations: tuple[str, ...] = ("sedt", "binary"),
              voxel_spacing_mm: tuple[float, ...] | None = None,
              overwrite: bool = False) -> dict:
     try:
@@ -116,6 +151,8 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
         raise ValueError("Crop dimensions must be >=2")
     if any(o not in ORIGINS for o in origins):
         raise ValueError("Unsupported crop origin")
+    if not filtrations or any(f not in FILTRATIONS for f in filtrations):
+        raise ValueError("Select binary and/or sedt filtrations")
     if voxel_spacing_mm is not None and (
             len(voxel_spacing_mm) != 3 or
             any(v <= 0 or not math.isfinite(v) for v in voxel_spacing_mm)):
@@ -158,21 +195,28 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                 raise ValueError(f"Expected 256^3 HDF5 bin array for {sample}; got {data.shape}")
             if np.dtype(data.dtype).kind not in "biu":
                 raise ValueError(f"Expected numeric binary data for {sample}")
-            for size in sorted(set(crop_sizes)):
-                for position in origins:
-                    offset = crop_origin(tuple(data.shape), size, position)
-                    sub = np.asarray(data[tuple(slice(i, i+size) for i in offset)])
-                    # Never silently reinterpret phase or binarize nonbinary data.
-                    if not np.isin(sub, [0, 1]).all():
-                        raise ValueError(f"DRP-372 nonbinary values in {sample} crop {position}")
-                    pore = np.ascontiguousarray(sub, dtype=np.uint8)
-                    ident = f"{sample}__s{size}__{position}"
+            full_bin = np.asarray(data[...],dtype=np.uint8)
+            if not np.isin(full_bin,[0,1]).all():
+                raise ValueError(f"Source geometry for {sample} contains values other than 0 and 1")
+        # Compute signed distance on the FULL source. Never compute it
+        # separately within each crop: its outer boundary would move.
+        full_sedt = signed_edt_uint16(full_bin) if "sedt" in filtrations else None
+        label = permeability_lus(row)
+        for size in sorted(set(crop_sizes)):
+            for position in origins:
+                offset = crop_origin(tuple(full_bin.shape), size, position)
+                slices = tuple(slice(i,i+size) for i in offset)
+                binary_crop = np.ascontiguousarray(full_bin[slices],dtype=np.uint8)
+                for filtration in filtrations:
+                    cropped = (np.ascontiguousarray(full_sedt[slices],dtype=np.uint16)
+                               if filtration == "sedt" else binary_crop)
+                    ident = f"{sample}__s{size}__{position}__{filtration}"
                     target = volumes_dir / f"{ident}.npy"
                     if target.exists() and not overwrite:
                         raise FileExistsError(target)
-                    np.save(target, pore, allow_pickle=False)
+                    np.save(target,cropped,allow_pickle=False)
                     target_rel = target.relative_to(output).as_posix()
-                    label = permeability_lus(row)
+                    digest = sha256(target)
                     manifest["volumes"].append({
                         "id": ident,
                         "path": target_rel,
@@ -182,7 +226,7 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                         "split": "pilot",
                         "voxel_spacing_mm": list(voxel_spacing_mm)
                                             if voxel_spacing_mm is not None else None,
-                        "sha256": sha256(target),
+                        "sha256": digest,
                     })
                     metadata.append({
                         "id": ident, "sample": sample,
@@ -191,18 +235,23 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                         "original_mat_path": str(mat),
                         "original_mat_sha256": original_hash,
                         "cropped_npy_path": target_rel,
-                        "cropped_npy_sha256": sha256(target),
+                        "cropped_npy_sha256": digest,
                         "source_shape": "256x256x256",
                         "crop_shape": f"{size}x{size}x{size}",
                         "origin_mode": position,
                         "origin_zyx": json.dumps(offset),
                         "pore_label": 0, "solid_label": 1,
-                        "pore_fraction": round(float(np.mean(pore == 0)), 8),
+                        "pore_fraction": round(float(np.mean(binary_crop == 0)), 8),
                         "permeability_lus": label,
                         "log10_permeability_lus": (
                             round(math.log10(label), 10) if label is not None else None),
-                        "filtration": "binary_lower_star",
+                        "filtration": ( "sedt_uint16_offset32768_scale32_full256"
+                                        if filtration == "sedt" else "binary_lower_star"),
+                        "filtration_dtype": str(cropped.dtype),
+                        "filtration_min": int(cropped.min()),
+                        "filtration_max": int(cropped.max()),
                     })
+        del full_sedt, full_bin
     (output / "cohort_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     fields = list(metadata[0])
@@ -214,7 +263,9 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
     summary = {
         "source": "DRP-372 frozen complete_pairs.csv",
         "geometry_variable": "bin", "pore_label": 0, "solid_label": 1,
-        "filtration": "binary_lower_star",
+        "filtrations": list(filtrations),
+        "sedt_quantization": "clip(rint(32768 + 32*(d_solid - d_pore)), 0, 65535)",
+        "distance_transform_domain": "full_256_cube_before_crop",
         "samples": len(rows), "crops": len(metadata),
         "crop_sizes": sorted(set(crop_sizes)), "origins": list(origins),
         "permeability_with_valid_source_unit": sum(
@@ -236,6 +287,8 @@ def main() -> None:
     parser.add_argument("--sizes", nargs="+", type=int, default=[12, 24])
     parser.add_argument("--origins", nargs="+", choices=ORIGINS,
                         default=["center", "quarter"])
+    parser.add_argument("--filtrations", nargs="+", choices=FILTRATIONS,
+                        default=["sedt", "binary"])
     parser.add_argument("--voxel-spacing-mm", nargs=3, type=float)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
@@ -243,6 +296,7 @@ def main() -> None:
         cohort_csv=args.cohort_csv, root=args.root, output=args.output,
         sample_ids=args.sample, limit=args.limit,
         crop_sizes=tuple(args.sizes), origins=tuple(args.origins),
+        filtrations=tuple(args.filtrations),
         voxel_spacing_mm=tuple(args.voxel_spacing_mm)
                          if args.voxel_spacing_mm else None,
         overwrite=args.overwrite)
