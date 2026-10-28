@@ -146,6 +146,13 @@ with PPGAnalysis(image, retain_inclusion_trace=True) as analysis:
     print(decision.feasible, complete.old_filling_reconstructed)
 ```
 
+The convenience method `oracle.restricted_relative_box(witness,
+lower=(...), upper=(...), reconstruct=True)` accepts inclusive doubled-grid
+coordinates, enumerates only new (q+1)-cells entering at the selected death
+value, and then runs the same exact coordinate solver. In particular, it
+does NOT restrict the old chain correction to the supplied box.
+The method verifies region bounds and provides independent candidate/work caps.
+
 The allowed new cells can instead come from a user-selected region.
 This API is independent of a particular box representation; callers
 should validate any proposed region before generating its permitted cells.
