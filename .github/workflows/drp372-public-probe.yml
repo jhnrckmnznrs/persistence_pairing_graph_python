@@ -1,0 +1,37 @@
+name: One-off DRP-372 public access probe
+on:
+  push:
+    branches: [research/drp372-certificate-pilot]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Probe published DRP-372 source without downloading volumes
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          targets = {
+              "historic_corral_root": "https://web.corral.tacc.utexas.edu/digitalporousmedia/DRP-372/",
+              "new_portal_sample": "https://digitalporousmedia.org/published-datasets/drp.project.published.DRP-372/digital_dataset/01fad2df-b75d-41eb-8ff5-e7be9ddcdeca",
+          }
+          results = []
+          for name, url in targets.items():
+              try:
+                  req=urllib.request.Request(url,headers={"User-Agent":"DRP372-research-probe/1.0"})
+                  with urllib.request.urlopen(req,timeout=12) as r:
+                      head=r.read(4096)
+                      result={"source":name,"reachable":True,"http_status":r.status,
+                              "content_type":r.headers.get("Content-Type"),
+                              "first_kb_chars":len(head)}
+              except Exception as e:
+                  result={"source":name,"reachable":False,
+                          "error_type":type(e).__name__,"error":str(e)[:260]}
+              print(json.dumps(result),flush=True)
+              results.append(result)
+          # The access probe never fabricates a successful source download.
+          PY
