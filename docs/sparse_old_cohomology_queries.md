@@ -186,6 +186,38 @@ that enumerates all old original-grid filling cells. It reports the shared
 PPG setup and oracle index time separately. These are single-run
 measurements and should not be described as stable speedups.
 
+### Preliminary measurements from GitHub Actions (28 October 2026)
+
+These are **individual** selected-event timings in milliseconds after
+the shared PPG reduction has been computed. A coordinate query answers
+feasibility; a complete query also reconstructs and verifies the entire
+original-grid chain. Times fluctuate and do not represent medians across
+independent volumes.
+
+| Synthetic 3D event | Feasibility only (ms) | Complete filling (ms) | Full original old-cell reference (ms) |
+|---|---:|---:|---:|
+| 9³ noise H1 | 0.58 | 0.90 | 22.35 |
+| 12³ noise H1 | 0.36 | 0.99 | 29.80 |
+| 16³ noise H1 | 0.31 | 0.47 | 65.79 |
+| 16³ correlated H1 | 0.74 | 1.17 | 72.16 |
+| 16³ cavity H2 | 7.21 | 12.73 | 46.02 |
+| 24³ cavity H2 | 40.46 | 75.65 | Not run |
+| 32³ noise H1 | 0.76 | 1.14 | Not run |
+| 32³ cavity H2 | 91.83 | 171.79 | Not run |
+
+One-time PPG setup at 32³ took 2.81 s for the cavity and 4.19 s
+for the noise field on this runner. The oracle's compressed numerical
+index construction took approximately 2.5 ms and 8.1 ms, respectively.
+These costs must be included in comparisons for one-shot users.
+
+The positive test uses new cells extracted from an existing verified
+PPG filling. The negative test removes all permitted new cells; it is
+expected to be infeasible for a genuine PPG death event. This does not
+yet quantify effectiveness across arbitrary user-selected regions or
+hard instances with many competing new relative cycles. Consequently,
+the results demonstrate a promising precise implementation, **not**
+unconditional complexity improvements or general predictive impact.
+
 ### Literature context
 
 This use of reduction-based coordinates and duality is a specialization
