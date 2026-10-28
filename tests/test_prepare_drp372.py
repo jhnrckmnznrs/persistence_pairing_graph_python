@@ -99,6 +99,7 @@ def test_adapter_pilot_runs_complete_ppg_audit_on_h2_shell(tmp_path):
         "--output",str(tmp_path/"audit"),
         "--radii","0","1","2","4",
         "--max-events-per-dimension","1",
+        "--no-global",
         "--max-reference-queries","1",
         "--reference-max-grid-cells","30000",
         "--timeout-s","90",
