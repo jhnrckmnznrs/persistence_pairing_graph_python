@@ -400,9 +400,29 @@ def benchmark_volume(entry, opts, out_jsonl: Path) -> None:
                         result["reference_status"] = "verified"
                         if bool(reference.feasible) != feasible:
                             raise AssertionError("Sparse vs full reference feasibility mismatch")
+                        if opts["compare_component_reference"]:
+                            start_component = perf_counter()
+                            component = certify_relative_filling(
+                                image, witness.relation_support, new,
+                                dimension=node.dimension,
+                                event_value=node.death_value, old_solver="component",
+                                max_grid_cells=opts["reference_max_grid_cells"],
+                                max_old_cells=opts["reference_max_old_cells"],
+                                max_boundary_rows=opts["reference_max_boundary_rows"],
+                            )
+                            result["component_reference_s"] = round(
+                                perf_counter()-start_component, 6)
+                            result["component_old_columns"] = component.old_candidate_count
+                            if bool(component.feasible) != feasible:
+                                raise AssertionError(
+                                    "Sparse vs incidence-component feasibility mismatch")
+                            result["component_reference_status"] = "verified"
+                        else:
+                            result["component_reference_status"] = "not_requested"
                         reference_queries += 1
                     else:
                         result["reference_status"] = "skipped_resource_budget"
+                        result["component_reference_status"] = "skipped_resource_budget"
                     result["peak_rss_kib"] = rss_kib()
                 except (ValueError, MemoryError, RuntimeError, AssertionError) as exc:
                     result.update(status="error", error_type=type(exc).__name__,
@@ -488,6 +508,7 @@ def run(args) -> int:
         "reference_max_old_cells": args.reference_max_old_cells,
         "reference_max_boundary_rows": args.reference_max_boundary_rows,
         "max_reference_queries": args.max_reference_queries,
+        "compare_component_reference": args.compare_component_reference,
     }
     (output / "configuration.json").write_text(json.dumps({
         "manifest": entries, "options": options,
@@ -525,6 +546,21 @@ def run(args) -> int:
                     records.append(json.loads(line))
     event_rows = [x for x in records if x.get("kind") == "event"]
     region_rows = [x for x in records if x.get("kind") == "region"]
+    for event in event_rows:
+        related = [r for r in region_rows
+                   if r.get("id") == event["id"]
+                   and r.get("event_id") == event["event_id"]]
+        event["completed_region_queries"] = sum(
+            r.get("status") == "ok" for r in related)
+        event["failed_region_queries"] = sum(
+            r.get("status") != "ok" for r in related)
+        first = next((r for r in related
+                      if r.get("status") == "ok" and r.get("feasible") is True),
+                     None)
+        event["first_sufficient_tested_radius"] = (
+            first["radius_voxels"] if first is not None else None)
+        event["regions_exhaustively_decided"] = bool(related) and all(
+            r.get("status") == "ok" for r in related)
     _csv(output / "events.csv", event_rows)
     _csv(output / "regions.csv", region_rows)
     issues = [
@@ -539,6 +575,8 @@ def run(args) -> int:
         "verified_reconstructions": sum(r.get("verified") is True for r in region_rows),
         "reference_comparisons": sum(
             r.get("reference_status") == "verified" for r in region_rows),
+        "component_reference_comparisons": sum(
+            r.get("component_reference_status") == "verified" for r in region_rows),
         "failed_workers": failures, "recorded_errors": issues,
         "status": "failed" if failures or issues else "complete",
     }
@@ -578,6 +616,7 @@ def main() -> int:
     command.add_argument("--reference-max-old-cells", type=int, default=20_000)
     command.add_argument("--reference-max-boundary-rows", type=int, default=30_000)
     command.add_argument("--max-reference-queries", type=int, default=3)
+    command.add_argument("--compare-component-reference", action="store_true")
     args = parser.parse_args()
     if args.command == "_worker":
         return _worker(args.config, args.result)
