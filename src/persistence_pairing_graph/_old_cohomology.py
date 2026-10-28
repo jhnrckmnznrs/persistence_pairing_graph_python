@@ -20,7 +20,6 @@ from ._filling_locality import _dimension, _faces, _support
 from ._lift import _compressed_v_column, boundary_old_chain
 from ._local_pairs import solve_component_correction
 from ._projection_replay import SelectiveProjectionReplay
-from ._reverse_replay import SelectiveInclusionReplay
 from ._transition_witness import _original_cell_birth
 
 
@@ -92,18 +91,21 @@ class SparseOldLevelOracle:
         self.max_component_faces = max_component_faces
         trace = self.compressed.lift_trace
         self.projector = SelectiveProjectionReplay(trace)
-        self.inclusion = SelectiveInclusionReplay(trace)
-        self.pivot_to_death: dict[int, dict[int, int]] = {}
+        # Forward and reverse replay share the same canceled-generator owner
+        # index and sparse influence cache rather than allocating them twice.
+        self.inclusion = self.projector
+        n = len(self.compressed)
+        self.pivot_to_death = np.full(n, -1, dtype=np.int32)
         for j, pivot in enumerate(self.reduction.low):
-            if pivot < 0:
-                continue
-            dimension = int(self.compressed.dimensions[j]) - 1
-            if dimension < 0:
-                raise RuntimeError('Invalid reduction pivot dimension')
-            block = self.pivot_to_death.setdefault(dimension, {})
-            if int(pivot) in block:
-                raise RuntimeError('Two reduced columns have the same pivot')
-            block[int(pivot)] = j
+            if pivot >= 0:
+                if self.pivot_to_death[int(pivot)] >= 0:
+                    raise RuntimeError('Two reduced columns have the same pivot')
+                self.pivot_to_death[int(pivot)] = j
+        # Index only compressed survivor cells. A sorted uint32/uint64
+        # numeric table avoids one Python dictionary entry per generator.
+        ids = np.asarray(self.compressed.original_grid_indices)
+        self._sorted_order = np.argsort(ids, kind='stable')
+        self._sorted_grid_ids = ids[self._sorted_order]
         self.projection_queries = 0
 
     def _validated_old_cycle(self, cycle: Iterable[int], dimension: int,
@@ -131,11 +133,10 @@ class SparseOldLevelOracle:
         free: set[int] = set()
         selected: set[int] = set()
         entries = 0
-        pivot_deaths = self.pivot_to_death.get(dimension, {})
         while remaining:
             pivot = max(remaining)
-            death = pivot_deaths.get(pivot)
-            if death is None or self.compressed.values[death] >= t:
+            death = int(self.pivot_to_death[pivot])
+            if death < 0 or self.compressed.values[death] >= t:
                 remaining.remove(pivot)
                 free.add(pivot)
                 continue
@@ -168,15 +169,13 @@ class SparseOldLevelOracle:
             dimension,event_value,normal,len(compact),deaths,work)
 
     def _compressed_id_from_old(self, old: int) -> int:
-        # The compressed generator IDs are row-major original IDs, but the
-        # mapping is sparse and usually a tiny fraction of the original grid.
-        if not hasattr(self,'_old_to_compressed'):
-            self._old_to_compressed = {
-                int(v):j for j,v in enumerate(self.compressed.original_grid_indices)}
-        value = self._old_to_compressed.get(int(old))
-        if value is None:
+        # The original IDs are not in numerical order after compression.
+        # Binary search a packed sorted index rather than a Python hash map.
+        position = int(np.searchsorted(self._sorted_grid_ids, int(old)))
+        if position >= len(self._sorted_grid_ids) or (
+            int(self._sorted_grid_ids[position]) != int(old)):
             raise RuntimeError('Projection produced a canceled generator')
-        return value
+        return int(self._sorted_order[position])
 
     def boundary_preimage(self, cycle: Iterable[int], *, dimension: int,
                           event_value: int | float) -> np.ndarray:
