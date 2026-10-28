@@ -91,7 +91,7 @@ def test_tiff_volume_end_to_end_and_full_reference(tmp_path):
          "voxel_spacing_mm": [0.02, 0.02, 0.025],
          "group": "synthetic", "split": "test"},
     ])
-    result = _run(path, tmp_path / "audit")
+    result = _run(path, tmp_path / "audit", "--compare-component-reference")
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     folder = tmp_path / "audit"
     summary = json.loads((folder / "summary.json").read_text())
@@ -99,6 +99,7 @@ def test_tiff_volume_end_to_end_and_full_reference(tmp_path):
     assert summary["events"] >= 1
     assert summary["regions"] >= 3
     assert summary["reference_comparisons"] >= 1
+    assert summary["component_reference_comparisons"] >= 1
     assert summary["verified_reconstructions"] >= 1
     rows = [json.loads(x) for x in
             (folder / "cavity.jsonl").read_text().splitlines()]
@@ -107,6 +108,11 @@ def test_tiff_volume_end_to_end_and_full_reference(tmp_path):
     assert any(r.get("verified") is True for r in regions)
     assert all(r.get("status") == "ok" for r in regions)
     assert (folder / "events.csv").is_file()
+    import csv
+    with (folder / "events.csv").open(newline="", encoding="utf-8") as f:
+        first_event = next(csv.DictReader(f))
+    assert first_event["first_sufficient_tested_radius"] in ("0", "1", "2", "global")
+    assert int(first_event["completed_region_queries"]) >= 3
     assert (folder / "regions.csv").is_file()
     vol = next(x for x in rows if x["kind"] == "volume")
     assert vol["input_sha256"] == audit.file_sha256(tmp_path / "cavity.tif")
