@@ -91,7 +91,7 @@ def test_adapter_pilot_runs_complete_ppg_audit_on_h2_shell(tmp_path):
     prepared = tmp_path / "prepared"
     drp.generate(cohort_csv=csvpath,root=root,output=prepared,
                  crop_sizes=(12,),origins=("center",),limit=1,
-                 filtrations=("sedt",))
+                 filtrations=("sedt",), levels_per_voxel=32)
     script=Path(__file__).resolve().parents[1]/"benchmarks"/"certificate_audit.py"
     run=subprocess.run([
         sys.executable,str(script),"run",
@@ -122,7 +122,8 @@ def test_cohort_filters_and_hash_checks(tmp_path):
     root, csvpath, mat = build_fixture(tmp_path)
     with pytest.raises(ValueError,match="absent"):
         drp.generate(cohort_csv=csvpath,root=root,
-                     output=tmp_path/"wrong",sample_ids=["777_99"])
+                     output=tmp_path/"wrong",sample_ids=["777_99"],
+                     filtrations=("binary",))
     with pytest.raises(ValueError,match="checksum"):
         with csvpath.open("r",newline="") as f:
             rows=list(csv.DictReader(f))
@@ -132,18 +133,32 @@ def test_cohort_filters_and_hash_checks(tmp_path):
             rows[0]["binary_sha256"]="0"*64
             w.writerows(rows)
         drp.generate(cohort_csv=csvpath,root=root,
-                     output=tmp_path/"wrong_hash")
+                     output=tmp_path/"wrong_hash",filtrations=("binary",))
 
 
 def test_signed_edt_phase_polarity_and_historical_encoding():
     scipy = pytest.importorskip("scipy")
     full = np.zeros((5,5,5),dtype=np.uint8)
     full[2,2,2]=1
-    q = drp.signed_edt_uint16(full)
+    q = drp.signed_edt_uint16(full,levels_per_voxel=32)
     assert q.dtype == np.uint16
     assert int(q[2,2,2]) == 32768 + 32
     assert int(q[2,2,1]) == 32768 - 32
     assert int(q[2,2,0]) == 32768 - 64
     assert int(q.min()) < 32768 < int(q.max())
     with pytest.raises(ValueError,match="both pore and solid"):
-        drp.signed_edt_uint16(np.zeros((4,4,4),dtype=np.uint8))
+        drp.signed_edt_uint16(np.zeros((4,4,4),dtype=np.uint8),levels_per_voxel=32)
+
+
+def test_sedt_requires_explicit_verified_scale(tmp_path):
+    root, csvpath, _ = build_fixture(tmp_path)
+    with pytest.raises(ValueError, match="levels-per-voxel"):
+        drp.generate(
+            cohort_csv=csvpath, root=root, output=tmp_path/"bad_sedt",
+            limit=1, crop_sizes=(12,), origins=("center",),
+            filtrations=("sedt",))
+    input_mask = np.zeros((5,5,5), dtype=np.uint8)
+    input_mask[2,2,2] = 1
+    q = drp.signed_edt_uint16(input_mask, levels_per_voxel=64)
+    assert int(q[2,2,2]) == 32768+64
+    assert int(q[2,2,1]) == 32768-64
