@@ -220,6 +220,63 @@ Interpret the end-to-end results in
 per-volume JSONL audit files. Skipped independent full references are
 not silently treated as verified.
 
+## If the first real-rock crop contains no positive-persistence events
+
+On 28 October 2026 the **actual Stage E SEDT crop** of
+`10_01`, size 12³, centered at the volume midpoint, produced:
+
+```json
+{"volumes":1,"events":0,"regions":0,
+ "verified_reconstructions":0,"status":"complete"}
+```
+
+This is **not** a failed relative-filling query and **does not**
+validate certificate reconstruction on the real rock. The selector
+requires finite positive-length H1/H2 bars; small boxes can lack
+such bars even when the full rock has complicated topology.
+
+The audit now reports `event_inventories` (finite positive, finite
+zero, and essential counts by dimension), filtration min/max, distinct
+uint16 levels and numbers of codes below/at/above SEDT zero code
+32768. Examine `summary.json` and each per-volume JSONL record
+to distinguish a homogeneous/uninteresting crop from the selector's
+positive-persistence restriction.
+
+Do not alter the SEDT quantization scale or interpret zero events
+as evidence that the full original 256³ rock has trivial homology.
+
+A small pre-registered **scale and location diagnostic** for specimen
+`10_01` is:
+
+```bash
+python benchmarks/prepare_drp372_cohort.py \\
+  --root "$HOME/temp/drp372/drp372_256" \\
+  --cohort-csv "$HOME/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv" \\
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_multiscale" \\
+  --sample 10_01 --limit 1 \\
+  --sizes 24 32 --origins center quarter three_quarter \\
+  --filtrations sedt --sedt-source stage-e \\
+  --levels-per-voxel 64
+
+python benchmarks/certificate_audit.py run \\
+  --manifest "$HOME/temp/drp372/ppg_stage_e_crops_multiscale/cohort_manifest.json" \\
+  --output "$HOME/temp/drp372/ppg_stage_e_audit_multiscale" \\
+  --radii 0 1 2 4 --no-global \\
+  --max-events-per-dimension 2 --decision-repeats 2 \\
+  --max-original-cells 1000000 --max-new-cells 2000 \\
+  --max-reference-queries 1 --timeout-s 600
+```
+
+These are six *non-independent* subvolume cases from one specimen:
+24³ and 32³ at three predetermined locations. Each cropped
+filtration uses the bitwise-saved full-256³ SEDT. This is a software
+and local-topology diagnostic, not evidence of predictive permeability
+associations. If several are still zero-event, expand to **different
+source family groups** using the frozen 119-sample cohort while keeping
+the specimen selection independent of target permeability.
+
+Do not delete or overwrite the original successful 12³ audit output.
+
 ## Stage 3: scientific protocol
 
 After the software pipeline passes:
