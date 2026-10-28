@@ -57,6 +57,7 @@ class SparseRelativeCertificate:
     coordinate_rank: int
     projection_queries: int
     old_pivot_columns_used: int
+    old_filling_reconstructed: bool = False
 
 
 class SparseOldLevelOracle:
@@ -125,6 +126,43 @@ class SparseOldLevelOracle:
         if len(boundary_old_chain(chain, self.grid_shape)):
             raise ValueError('Query is not an old cellular cycle')
         return chain
+
+    def _validated_old_chain(self, chain: Iterable[int], dimension: int,
+                             t: int | float) -> list[int]:
+        """Validate an arbitrary old q-chain, not necessarily a cycle."""
+        if self.analysis.closed:
+            raise RuntimeError('PPGAnalysis is closed')
+        if not 0 <= dimension < self.image.ndim or not np.isfinite(t):
+            raise ValueError('Invalid dimension or event value')
+        support = _support(chain, self.total_cells, toggle=True)
+        strides = tuple(prod(self.grid_shape[i+1:])
+                        for i in range(len(self.grid_shape)))
+        for cell in support:
+            if _dimension(cell, self.grid_shape, strides) != dimension:
+                raise ValueError('Query has a cell of the wrong homology dimension')
+            if _original_cell_birth(self.image,cell,self.grid_shape) >= t:
+                raise ValueError('Query must lie strictly before event_value')
+        return support
+
+    def evaluate_cocycle(self, cocycle_coordinates: Iterable[int],
+                         old_chain: Iterable[int], *,
+                         dimension: int, event_value: int | float) -> int:
+        """Evaluate a lazily represented old q-cocycle on any old q-chain.
+
+        The cocycle is a linear functional of canonical quotient normal-form
+        coordinates, hence it annihilates *all* old (q+1)-boundaries, even
+        when the input q-chain is not itself a cycle.
+        """
+        support = self._validated_old_chain(old_chain,dimension,event_value)
+        projected=self.projector.project(
+            support,max_output_cells=self.max_output_cells)
+        self.projection_queries += 1
+        compact=[self._compressed_id_from_old(v) for v in projected]
+        normal, _, _ = self._normal_form(compact,dimension,event_value)
+        chosen = set(map(int,cocycle_coordinates))
+        if any(v < 0 or v >= len(self.compressed) for v in chosen):
+            raise ValueError('Invalid compressed cocycle coordinate index')
+        return len(chosen.intersection(normal)) & 1
 
     def _normal_form(self, projected_cells: Iterable[int],
                      dimension: int, t: int | float) -> tuple[tuple[int, ...],
@@ -338,7 +376,7 @@ class SparseOldLevelOracle:
                 False,q,t,np.asarray(old_cycle,dtype=np.int64),
                 np.empty(0,dtype=np.int64),np.empty(0,dtype=np.int64),
                 obstruct,len(null_combos),len(pivot_coords),
-                self.projection_queries,len(target.pivot_columns_used))
+                self.projection_queries,len(target.pivot_columns_used),False)
         selected_new=0
         for k,combo in enumerate(null_combos):
             if (chosen>>k)&1: selected_new^=combo
@@ -358,4 +396,4 @@ class SparseOldLevelOracle:
         return SparseRelativeCertificate(
             True,q,t,np.asarray(old_cycle,dtype=np.int64),
             old_fill,new_chain,(),len(null_combos),len(pivot_coords),
-            self.projection_queries,len(target.pivot_columns_used))
+            self.projection_queries,len(target.pivot_columns_used),reconstruct)
