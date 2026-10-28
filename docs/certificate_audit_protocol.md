@@ -60,7 +60,8 @@ python benchmarks/certificate_audit.py run \
   --decision-repeats 3 \
   --timeout-s 600 \
   --reference-max-grid-cells 30000 \
-  --max-reference-queries 3
+  --max-reference-queries 3 \
+  --compare-component-reference
 ```
 
 Each manifest entry runs in a fresh subprocess, so peak RSS and failures
@@ -121,7 +122,13 @@ The workflow records:
 7. For small cases only, an independent full old-cell reference computation
    and exact feasibility agreement. Reference cases are limited by both
    maximum original grid size and per-volume reference query count.
-8. Explicit statuses for unsupported, skipped-budget, timed-out, or
+8. Optional incidence-component reference comparisons (with
+   `--compare-component-reference`) using the same permitted new cells and
+   bounded reference budget; this is distinct from the full old-cell scan.
+9. The first sufficient *tested* nested radius per event, the number of
+   completed region queries, and whether all requested regions were decided.
+   This is not a globally smallest geometric region.
+10. Explicit statuses for unsupported, skipped-budget, timed-out, or
    failed queries and workers.
 
 **Do not report a reference comparison on a large case as passed if it
@@ -137,7 +144,8 @@ run each method in independent processes and repeat volumes/queries.
 
 Each run writes:
 
-- `configuration.json`: resolved manifest and options, Python/NumPy/platform.
+- `configuration.json`: resolved manifest and options, Python/NumPy/platform,
+  installed package version and Git revision when available.
 - `<volume_id>_worker_config.json`: exact per-volume worker inputs.
 - `<volume_id>.jsonl`: append-only stage, event, region and failure records.
 - `events.csv` and `regions.csv`: flat summaries; nested fields encoded
