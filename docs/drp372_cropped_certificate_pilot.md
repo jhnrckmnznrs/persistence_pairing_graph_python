@@ -63,14 +63,23 @@ embedded in older Stage G summaries may refer to a former
 `~/Desktop/drp372` location; the preflight resolves files in the
 current workspace instead.
 
-**Do not run the SEDT crop adapter with an unverified encoding scale.**
-The adapter now requires explicit `--levels-per-voxel S` whenever
-`--filtrations` contains `sedt`. Use the saved Stage E parameters
-and inspect the original `drp372_prepare_sedt.py` before specifying
-this value. If Stage E already stores uint16 256³ SEDT arrays, prefer
-reusing them without recomputing the Euclidean distances; first verify
-their actual filenames, axis order, hash and quantization. The current
-adapter still computes SEDT from the original binary when selected.
+**Scale and saved files verified by your preflight.** The frozen 119-case
+Stage E manifest and original source script both confirm
+`levels_per_voxel=64.0`, `zero_code=32768`, and quantization step
+`1/64` voxel. The new adapter's **default** is
+`--sedt-source stage-e`, which reuses the existing
+`sedt_stage_e/sedt/<sample>_sedt_u16.tif` after verifying the original
+source MAT SHA-256, saved TIFF SHA-256, encoded extrema, dtype, shape
+and crop-level sign/axis agreement with the binary source.
+The obsolete absolute `~/Desktop/drp372` path is never used to
+retrieve the TIFF. A mismatch fails rather than silently recomputing.
+
+Only `--sedt-source recompute` recomputes the full 256³ SEDT and it
+must be explicitly requested; recomputation is **not** the recommended
+reproduction path. The new certificate backend still builds its own
+PPG/reduction **for cropped inputs**. Stage F outputs are retained
+for original full-rock comparisons, not assumed to contain a reusable
+Python filtered contraction.
 
 **Validation-fold caution:** Stage G's project-group labels DRP16,
 DRP317, and DRP374 occur in multiple primary folds. This is not
@@ -78,20 +87,33 @@ project-disjoint validation as recorded; check the original grouping
 script for whether folds were built around a different family/grouping
 criterion before reusing earlier model scores.
 
+**Your verified local paths (from the recovered workspace):**
+
+```text
+~/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv
+~/temp/drp372/drp372_256/sedt_stage_e/sedt_manifest.csv
+~/temp/drp372/drp372_256/sedt_stage_e/sedt/<sample>_sedt_u16.tif
+```
+
+The root `~/temp/drp372/drp372_256` contains the frozen 119-case
+cohort. Stage E, Stage F and Stage G each report 119 records, and the
+saved Stage F node/edge hashes match across the full cohort.
+
 ## Stage 1: lossless original-voxel pilot crops
 
 ```sh
 python -m pip install -e '.[images,rock,test]'
 
 python benchmarks/prepare_drp372_cohort.py \
-  --root /data/drp372_256 \
-  --cohort-csv /data/drp372_256/cohort_qc/complete_pairs.csv \
-  --output /data/ppg_drp372_pilot \
-  --limit 5 \
+  --root "$HOME/temp/drp372/drp372_256" \
+  --cohort-csv "$HOME/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv" \
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_pilot" \
+  --limit 3 \
   --sizes 12 24 \
   --origins center quarter \
-  --filtrations sedt binary \\
-  --levels-per-voxel YOUR_VERIFIED_STAGE_E_SCALE
+  --filtrations sedt binary \
+  --sedt-source stage-e \
+  --levels-per-voxel 64
 ```
 
 This creates:
@@ -108,20 +130,31 @@ This creates:
 No interpolation, majority downsampling, CT intensity normalization,
 phase inversion or resegmentation is performed.
 
-**Historical primary filtration:** The signed Euclidean distance transform
-is computed on the full original 256³ grid before cropping:
+The output `crop_provenance.csv` also stores each Stage E source TIFF
+hash, current path, its historical family/project validation groups,
+and the original primary outer fold. For future modeling, keep the
+**family group** as the original nonoverlapping fold unit; the
+`DRP16`, `DRP317` and `DRP374` project labels cross folds.
+The audit itself makes no predictive or project-held-out inference.
+
+**Historical primary filtration:** These are the original Stage E
+encoding equations. In the recommended `stage-e` mode, the transform
+below is **not recomputed**; it is already stored in the verified
+full-volume TIFF:
 
 ```python
 s = scipy.ndimage.distance_transform_edt(bin == 1) \
     - scipy.ndimage.distance_transform_edt(bin == 0)
-q = np.uint16(np.clip(np.rint(32768 + S*s), 0, 65535))
+q = np.uint16(np.clip(np.rint(32768 + 64*s), 0, 65535))
 ```
 
 Negative `s` is pore and positive `s` is solid. The primary
 `sedt` outputs are uint16, and the `binary` outputs are separate
 uint8 controls. The offset 32768 and explicitly verified scale `S` should match the
 historical Stage E encoding. The original script must also confirm the
-sign convention, array axes and distance-transform boundary semantics. No per-sample min-max normalization is applied.
+sign convention, array axes and distance-transform boundary semantics. No per-sample min-max normalization is applied. The metadata can be inspected
+without regenerating features, and the cropped TIFF values are bitwise
+copied to the pilot NPY arrays.
 Because the **full-volume** transform is computed first, the interior
 crop distances remain those of the complete rock. However, the
 resulting cropped cubical complex still has artificial topological
@@ -141,16 +174,17 @@ One can select specific samples from the already validated cohort:
 ```sh
 python benchmarks/prepare_drp372_cohort.py \
   --root /data/drp372_256 \
-  --cohort-csv /data/drp372_256/cohort_qc/complete_pairs.csv \
-  --output /data/ppg_drp372_pilot \
-  --sample 339_02 57_04 \
-  --limit 2 \
-  --sizes 12 24
+  --cohort-csv "$HOME/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv" \
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_pilot" \
+  --sample 10_01 \
+  --limit 1 \
+  --sizes 12 24 \
+  --sedt-source stage-e \
+  --levels-per-voxel 64
 ```
 
-Replace those example sample IDs with IDs present in *your* frozen
-`complete_pairs.csv`. Do not assume any demonstration ID belongs to
-the 119-pair complete-case cohort without checking the CSV.
+The preflight explicitly confirms that `10_01` belongs to the frozen
+119-case cohort. Additional IDs should be selected from the audited CSV.
 
 ## Stage 2: exact PPG certificate audit
 
