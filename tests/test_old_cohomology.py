@@ -143,3 +143,65 @@ def test_query_resource_errors_and_wrong_filtration():
         with pytest.raises(ValueError):
             oracle.restricted_relative([],new,dimension=1,event_value=2,
                                         max_new_cells=0)
+
+
+@pytest.mark.parametrize('shape',[(2,3),(2,2,2),(3,3,2)])
+def test_filtered_chain_homotopy_identity_on_old_cycles(shape):
+    rng=np.random.default_rng(2007+sum(shape))
+    grid=tuple(2*n+1 for n in shape)
+    for rep in range(3):
+        image=rng.integers(0,4,shape,dtype=np.uint8)
+        with PPGAnalysis(image,retain_inclusion_trace=True) as analysis:
+            oracle=SparseOldLevelOracle(analysis)
+            for q in range(image.ndim):
+                oldtop=cells(image,q+1,lambda level:level<2)
+                cycle=boundary_old_chain(oldtop[::2],grid)
+                projected=oracle.projector.project(
+                    cycle,stop_before_value=2,record_activations=True)
+                activated=oracle.projector.last_activated_cancellations
+                homotopy=set()
+                for j in activated:
+                    homotopy.symmetric_difference_update(
+                        map(int,oracle.inclusion.lift_canceled_death(j)))
+                old_included=oracle.inclusion.lift(projected)
+                residual=set(map(int,cycle))
+                residual.symmetric_difference_update(map(int,old_included))
+                assert set(map(int,boundary_old_chain(sorted(homotopy),grid)))==residual
+                correct=oracle.boundary_preimage(
+                    cycle,dimension=q,event_value=2,
+                    correction_method='homotopy')
+                reference=oracle.boundary_preimage(
+                    cycle,dimension=q,event_value=2,
+                    correction_method='incidence')
+                assert np.array_equal(boundary_old_chain(correct,grid),cycle)
+                assert np.array_equal(boundary_old_chain(reference,grid),cycle)
+
+
+def test_lazy_cocycle_annihilates_every_old_boundary():
+    image=np.array([
+        [0,0,0,0,0,0,0],
+        [0,2,2,2,2,2,0],
+        [0,2,1,3,1,2,0],
+        [0,2,2,2,2,2,0],
+        [0,0,0,0,0,0,0],
+    ],dtype=np.uint8)
+    with PPGAnalysis(image,retain_inclusion_trace=True) as analysis:
+        oracle=SparseOldLevelOracle(analysis)
+        oldedges=cells(image,1,lambda t:t<3)
+        if oldedges:
+            # Each component of a quotient normal form yields a cocycle,
+            # even when evaluated on noncycle original q-chains.
+            q=1
+            cycle=oldedges[:1]
+            # Collect a nonempty quotient coordinate from some old chain.
+            projected=oracle.projector.project(cycle)
+            old_coords=[oracle._compressed_id_from_old(x) for x in projected]
+            normal,_,_=oracle._normal_form(old_coords,q,3)
+            for basis_coordinate in normal[:3]:
+                phi=(basis_coordinate,)
+                assert oracle.evaluate_cocycle(phi,cycle,
+                        dimension=q,event_value=3)==1
+                for old_cell in cells(image,q+1,lambda t:t<3):
+                    boundary=boundary_old_chain([old_cell],analysis.grid_shape)
+                    assert oracle.evaluate_cocycle(phi,boundary,
+                           dimension=q,event_value=3)==0
