@@ -9,7 +9,8 @@ The MATLAB-v7.3 HDF5 variable 'bin' is a 256^3 binary array with
 0 = pore and 1 = solid. The primary historical filtration is the
 full-volume signed Euclidean distance transform (SEDT), negative in pore
 and positive in solid, encoded as uint16:
-  q = clip(round(32768 + 32*(d_solid - d_pore)), 0, 65535).
+  q = clip(round(32768 + S*(d_solid - d_pore)), 0, 65535),
+where S must be explicitly verified against the saved Stage E manifest.
 Distance transforms are calculated on the FULL 256^3 original domain
 before extracting native-resolution crops. The optional binary filtration
 is a separate control. No resizing or interpolation is performed.
@@ -40,7 +41,7 @@ ORIGINS = ("center", "quarter", "three_quarter")
 FILTRATIONS = ("sedt", "binary")
 
 
-def signed_edt_uint16(binary: np.ndarray) -> np.ndarray:
+def signed_edt_uint16(binary: np.ndarray, *, levels_per_voxel: float) -> np.ndarray:
     """Reproduce the historical signed-distance uint16 filtration encoding.
 
     Negative in pore (bin=0), positive in solid (bin=1), unit voxel
@@ -59,7 +60,9 @@ def signed_edt_uint16(binary: np.ndarray) -> np.ndarray:
         raise ValueError("SEDT requires both pore and solid phases")
     signed = distance_transform_edt(binary == 1)
     signed -= distance_transform_edt(binary == 0)
-    signed *= 32.0
+    if not math.isfinite(levels_per_voxel) or levels_per_voxel <= 0:
+        raise ValueError("levels_per_voxel must be finite and positive")
+    signed *= levels_per_voxel
     signed += 32768.0
     np.rint(signed,out=signed)
     np.clip(signed,0,65535,out=signed)
@@ -139,6 +142,7 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
              crop_sizes: tuple[int, ...] = (12, 24),
              origins: tuple[str, ...] = ("center", "quarter"),
              filtrations: tuple[str, ...] = ("sedt", "binary"),
+             levels_per_voxel: float | None = None,
              voxel_spacing_mm: tuple[float, ...] | None = None,
              overwrite: bool = False) -> dict:
     try:
@@ -153,6 +157,9 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
         raise ValueError("Unsupported crop origin")
     if not filtrations or any(f not in FILTRATIONS for f in filtrations):
         raise ValueError("Select binary and/or sedt filtrations")
+    if "sedt" in filtrations and (levels_per_voxel is None or
+            not math.isfinite(levels_per_voxel) or levels_per_voxel <= 0):
+        raise ValueError("Specify --levels-per-voxel from the verified Stage E manifest; do not assume 32 or 64")
     if voxel_spacing_mm is not None and (
             len(voxel_spacing_mm) != 3 or
             any(v <= 0 or not math.isfinite(v) for v in voxel_spacing_mm)):
@@ -200,7 +207,8 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                 raise ValueError(f"Source geometry for {sample} contains values other than 0 and 1")
         # Compute signed distance on the FULL source. Never compute it
         # separately within each crop: its outer boundary would move.
-        full_sedt = signed_edt_uint16(full_bin) if "sedt" in filtrations else None
+        full_sedt = (signed_edt_uint16(full_bin, levels_per_voxel=levels_per_voxel)
+                     if "sedt" in filtrations else None)
         label = permeability_lus(row)
         for size in sorted(set(crop_sizes)):
             for position in origins:
@@ -245,7 +253,7 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                         "permeability_lus": label,
                         "log10_permeability_lus": (
                             round(math.log10(label), 10) if label is not None else None),
-                        "filtration": ( "sedt_uint16_offset32768_scale32_full256"
+                        "filtration": ( f"sedt_uint16_offset32768_scale{levels_per_voxel:g}_full256"
                                         if filtration == "sedt" else "binary_lower_star"),
                         "filtration_dtype": str(cropped.dtype),
                         "filtration_min": int(cropped.min()),
@@ -264,7 +272,9 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
         "source": "DRP-372 frozen complete_pairs.csv",
         "geometry_variable": "bin", "pore_label": 0, "solid_label": 1,
         "filtrations": list(filtrations),
-        "sedt_quantization": "clip(rint(32768 + 32*(d_solid - d_pore)), 0, 65535)",
+        "sedt_quantization": (f"clip(rint(32768 + {levels_per_voxel:g}*(d_solid - d_pore)), 0, 65535)"
+                              if "sedt" in filtrations else None),
+        "levels_per_voxel": levels_per_voxel,
         "distance_transform_domain": "full_256_cube_before_crop",
         "samples": len(rows), "crops": len(metadata),
         "crop_sizes": sorted(set(crop_sizes)), "origins": list(origins),
@@ -290,6 +300,8 @@ def main() -> None:
     parser.add_argument("--filtrations", nargs="+", choices=FILTRATIONS,
                         default=["sedt", "binary"])
     parser.add_argument("--voxel-spacing-mm", nargs=3, type=float)
+    parser.add_argument("--levels-per-voxel", type=float,
+                        help="Required with sedt; verify against Stage E manifest")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     result = generate(
@@ -297,6 +309,7 @@ def main() -> None:
         sample_ids=args.sample, limit=args.limit,
         crop_sizes=tuple(args.sizes), origins=tuple(args.origins),
         filtrations=tuple(args.filtrations),
+        levels_per_voxel=args.levels_per_voxel,
         voxel_spacing_mm=tuple(args.voxel_spacing_mm)
                          if args.voxel_spacing_mm else None,
         overwrite=args.overwrite)
