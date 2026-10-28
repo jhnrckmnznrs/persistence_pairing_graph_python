@@ -136,3 +136,26 @@ def test_synthetic_nonzero_tails_and_filtered_cutoff():
     assert list(rep.project([3,7]))==[]
     with pytest.raises(MemoryError,match='max_processed_records'):
         rep.project([1],max_processed_records=1)
+
+
+def test_partial_inclusion_matches_explicit_elementary_contractions():
+    from persistence_pairing_graph import SelectiveInclusionReplay
+    from test_reverse_replay import _direct_lift
+    rng=np.random.default_rng(3105)
+    for shape in ((2,3),(2,2,2),(3,2,2)):
+        image=rng.integers(0,5,shape,dtype=np.uint8)
+        direct, _, steps, _ = _direct_oracle(image)
+        compressed=compress_discrete_tensor_streaming(
+            image,retain_inclusion_trace=True)
+        try:
+            replay=SelectiveInclusionReplay(compressed.lift_trace)
+            index=lambda j:int(direct.grid_indices[j])
+            assert replay.n==len(steps)
+            for j,(a,b,r,coupling) in enumerate(steps[::max(1,len(steps)//20)]):
+                actual_step=j*max(1,len(steps)//20)
+                _,death,_,_=steps[actual_step]
+                expected={index(x) for x in _direct_lift({death},steps[:actual_step])}
+                got=set(map(int,replay.lift_canceled_death(actual_step)))
+                assert got==expected
+        finally:
+            compressed.lift_trace.close()
