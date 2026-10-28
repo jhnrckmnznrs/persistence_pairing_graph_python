@@ -270,7 +270,7 @@ def certify_transition_relative_locality(
                for cell,coords in new_part):
             return RelativeLocalityCertificate(
                 True, witness.dimension, witness.event_value, grid_shape,
-                relation, len(old_part), len(new_part),
+                relation, 0, len(new_part),
                 np.asarray(old_part,dtype=np.int64),
                 np.asarray([cell for cell,coords in new_part],dtype=np.int64),
                 np.empty(0,dtype=np.int64),
