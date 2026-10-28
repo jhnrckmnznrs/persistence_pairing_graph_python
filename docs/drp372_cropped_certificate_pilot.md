@@ -173,6 +173,47 @@ After the software pipeline passes:
    DRP-372 experiment outputs, failures, peak RSS, calibration and
    baseline comparisons are available.
 
+## Previous full-volume DRP-372 PPG results to preserve
+
+The original 119-pair full-volume experiment (Rust
+`cubical_persistence --algorithm stream-block`) used the encoded SEDT,
+not the raw 0/1 image as the sole primary filtration. A recorded example
+had 135,005,697 cubical cells, 36,873 compressed generators, 54.11 s
+runtime and 689.22 MiB peak RSS. These figures were measured in the
+earlier Rust environment; they must not be attributed to the current
+Python oracle or its 12³/24³ pilot crops.
+
+The previous whole-cohort feature material included:
+- `drp372_256/features_stage_g/combined_features.csv`
+- `drp372_256/features_stage_g/core_feature_sets_v2.json`
+- `drp372_256/fpg_stage_f/` PPG output files.
+
+The earlier feature aggregation had 648 descriptors (4 geometry,
+224 persistence, 116 pure graph, 304 coupled), with a compact 21-feature
+persistence descriptor block across H0, H1 and H2. Prior
+project/family-grouped log10 lattice-permeability models included
+Ridge RMSE 0.7665 / R² 0.4529 and PLSR RMSE 0.6585 / R² 0.5962.
+These historical values must be reverified against the frozen saved
+feature tables and split definitions before being republished.
+
+A crucial negative control from September 2026: shuffled
+persistence-attribute coupling and event-constrained PPG target rewiring
+were not predictive disadvantages relative to the observed PPG.
+For example, an observed coupled model RMSE around 0.8653 was not
+better than its persistence-attribute surrogate median around 0.8375.
+The extra localization/certificate features should be compared not
+only against persistence diagrams and graph summaries but also against
+these **structurally constrained null models**. Otherwise, finding
+non-random PPG structure would not establish predictive usefulness.
+
+The new benchmark in PR #8 measures exact spatial certificates and
+runtime; it does not yet refit any model or rerun these historical
+nulls. After recovering the existing whole-cohort features, we should
+join them by **original sample ID** and retain project-grouped
+splits. Subcrops inherit the whole-rock permeability target only as
+specimen metadata: they do not constitute new independent permeability
+measurements.
+
 ## Source and citation
 
 Dataset project: <https://digitalporousmedia.org/published-datasets/tapis/projects/drp.project.published/drp.project.published.DRP-372>
