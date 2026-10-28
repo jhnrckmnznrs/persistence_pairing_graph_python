@@ -233,3 +233,40 @@ def test_one_new_square_can_force_quadratic_original_filling_support(side):
         assert len(complete.old_filling_cells)==side*side-1
         assert np.array_equal(boundary_old_chain(
             [*complete.old_filling_cells,*complete.new_filling_cells],grid),outer)
+
+
+def test_sparse_old_cohomology_box_queries_keep_old_corrections_global():
+    image=np.ones((5,5),dtype=np.uint8)
+    image[2,2]=2
+    grid=(11,11)
+    oldtop=cells(image,2,lambda t:t<2)
+    newtop=cells(image,2,lambda t:t==2)
+    outer=boundary_old_chain(oldtop+newtop,grid)
+
+    class Selected:
+        image_shape=(5,5)
+        dimension=1
+        event_value=2
+        relation_support=outer
+
+    with PPGAnalysis(image,retain_inclusion_trace=True) as analysis:
+        oracle=SparseOldLevelOracle(analysis)
+        centered=oracle.restricted_relative_box(
+            Selected(),lower=(5,5),upper=(5,5),reconstruct=True)
+        assert centered.feasible and centered.old_filling_reconstructed
+        assert len(centered.old_filling_cells)==24
+        assert len(centered.new_filling_cells)==1
+        excluded=oracle.restricted_relative_box(
+            Selected(),lower=(0,0),upper=(0,0),reconstruct=False)
+        assert not excluded.feasible
+        assert excluded.obstruction_coordinates
+        assert oracle.evaluate_cocycle(
+            excluded.obstruction_coordinates,outer,
+            dimension=1,event_value=2)==1
+        # The obstruction is a genuine old cocycle; the old correction
+        # is not artificially restricted to the small new-cell box.
+        for square in oldtop:
+            assert oracle.evaluate_cocycle(
+                excluded.obstruction_coordinates,
+                boundary_old_chain([square],grid),
+                dimension=1,event_value=2)==0
