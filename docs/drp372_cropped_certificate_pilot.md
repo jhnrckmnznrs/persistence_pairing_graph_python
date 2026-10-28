@@ -3,8 +3,9 @@
 This pilot returns to the **same DRP-372 source** used for the earlier
 August 2026 project (119 complete 256³ geometry/LBM.csv pairs), not a
 replacement digital rock dataset. It uses the existing verified 0=pore,
-1=solid phase semantics and the PPG package's cubical sublevel
-filtration. No permeability result is fabricated.
+1=solid phase semantics and the historical DRP-372 signed-distance
+filtration (SEDT), using the same offset/scale uint16 encoding as the
+earlier Rust PPG experiment. No permeability result is fabricated.
 
 ## Prerequisites: the frozen local cohort
 
@@ -50,7 +51,8 @@ python benchmarks/prepare_drp372_cohort.py \
   --output /data/ppg_drp372_pilot \
   --limit 5 \
   --sizes 12 24 \
-  --origins center quarter
+  --origins center quarter \
+  --filtrations sedt binary
 ```
 
 This creates:
@@ -66,6 +68,29 @@ This creates:
 
 No interpolation, majority downsampling, CT intensity normalization,
 phase inversion or resegmentation is performed.
+
+**Historical primary filtration:** The signed Euclidean distance transform
+is computed on the full original 256³ grid before cropping:
+
+```python
+s = scipy.ndimage.distance_transform_edt(bin == 1) \
+    - scipy.ndimage.distance_transform_edt(bin == 0)
+q = np.uint16(np.clip(np.rint(32768 + 32*s), 0, 65535))
+```
+
+Negative `s` is pore and positive `s` is solid. The primary
+`sedt` outputs are uint16, and the `binary` outputs are separate
+uint8 controls. The offset 32768, scale 32, and SciPy default
+boundary convention reproduce the earlier PPG experiment's stated
+encoding. No per-sample min-max normalization is applied.
+Because the **full-volume** transform is computed first, the interior
+crop distances remain those of the complete rock. However, the
+resulting cropped cubical complex still has artificial topological
+boundaries, which should be acknowledged in analysis.
+
+A full 256³ Euclidean-distance computation can temporarily allocate
+several hundred MiB. Prepare samples sequentially and keep the
+preparation memory budget separate from the PPG benchmark's peak RSS.
 
 The sample selection is deterministic: sorted complete-pair sample IDs,
 restricted by `--sample` when given, then `--limit` (default 5).
@@ -134,10 +159,11 @@ After the software pipeline passes:
 3. Increase size in stages (12³, 24³, 32³, then 64³/96³ as memory allows).
    Track timings for PPG preparation, re-used coordinate decisions,
    complete chain reconstruction and verification.
-4. Keep the original **binary** pore filtration as the primary
-   reproduction. A derived distance-to-interface filtration may be
-   informative but is a *separate sensitivity analysis* and must specify
-   sign, quantization, voxel spacing, and crop-boundary treatment.
+4. Keep the historical **SEDT uint16** filtration as the primary
+   reproduction and the raw binary (0 pore / 1 solid) filtration as a
+   separate control. Never combine their PPG node/edge counts into
+   one unlabelled feature dataset. Quantization, SciPy distance boundary
+   convention, and crop origin are mandatory metadata.
 5. Permeability is an independent whole-rock LBM target, and a small
    crop does not have a physically measured permeability. Therefore,
    do not report crop-level correlations as independent permeability
