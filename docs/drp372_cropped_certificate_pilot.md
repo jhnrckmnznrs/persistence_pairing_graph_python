@@ -192,8 +192,8 @@ Start small and use bounded nested regions:
 
 ```sh
 python benchmarks/certificate_audit.py run \
-  --manifest /data/ppg_drp372_pilot/cohort_manifest.json \
-  --output /data/ppg_drp372_audit \
+  --manifest "$HOME/temp/drp372/ppg_stage_e_crops_pilot/cohort_manifest.json" \
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_audit" \
   --radii 0 1 2 4 \
   --no-global \
   --max-events-per-dimension 2 \
@@ -279,7 +279,7 @@ only against persistence diagrams and graph summaries but also against
 these **structurally constrained null models**. Otherwise, finding
 non-random PPG structure would not establish predictive usefulness.
 
-The new benchmark in PR #8 measures exact spatial certificates and
+The new benchmark workflow measures exact spatial certificates and
 runtime; it does not yet refit any model or rerun these historical
 nulls. After recovering the existing whole-cohort features, we should
 join them by **original sample ID** and retain project-grouped
