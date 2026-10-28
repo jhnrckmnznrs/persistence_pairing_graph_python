@@ -185,6 +185,35 @@ References:
 - Bauer et al. (2024), *Keeping it sparse*:
   https://doi.org/10.57717/cgt.v3i1.50
 
+
+## 5b. Query-local forward projection (implemented on the research branch)
+
+Each recorded equal-filtration elementary contraction has a birth generator a,
+a death generator b and a tail r with d_j(b)=a+r over F2. Its chain
+projection sends a to r, b to 0, and fixes the other current generators.
+Composing these maps in the order of cancellation gives the projection from
+the original cubical complex to its compressed chain complex.
+
+`SelectiveProjectionReplay.project(original_grid_cells)` applies these
+substitutions using a min-heap of only touched canceled generators; no
+dense global projection matrix and no intermediate differential are formed.
+`stop_before_value=t` applies only cancellation records entering
+strictly before t, making it possible to project chains in the old complex
+K_{<t} without canceling the event-level pairs.
+
+Independent tests verify:
+- agreement with explicit elementary cancellations on small 2D and 3D grids;
+- exact chain-map identity d_M p(c)=p(d_C c);
+- p i=id on selected compressed generators, with i computed by the
+  separately implemented reverse replay;
+- exact agreement of filtration-truncated projections.
+
+This supplies the **projection** half of a selective cohomology-coordinate
+query. It does not by itself supply the old-level cocycle basis E_q or the
+selective old-boundary preimage needed to solve the full coordinate system.
+The forward trace must remain available and its filtration levels must
+respect the recorded cancellation order.
+
 ## 6. Reproducibility and scope
 
 ```sh
@@ -192,6 +221,7 @@ python -m pytest -q
 python benchmarks/investigate_dependency_closure.py --sizes 8 12 16 24 32
 python benchmarks/benchmark_selective_relative.py --sizes 5 7 9
 python benchmarks/benchmark_event_closure_3d.py --sizes 5 7 9
+python benchmarks/benchmark_projection_3d.py --sizes 8 16 24 32
 ```
 
 Exact relative queries are validated against the independent full
