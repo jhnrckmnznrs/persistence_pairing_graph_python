@@ -11,6 +11,7 @@ reduction and does not claim minimum support or global scalability.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import product
 from math import prod
 from typing import Iterable, Sequence
 
@@ -18,7 +19,7 @@ import numpy as np
 
 from ._filling_locality import (
     FillingLocalityCertificate, _dimension, _support,
-    certify_local_filling, eligible_filling_cells_in_box,
+    certify_local_filling,
 )
 from ._lift import boundary_old_chain
 from ._transition_witness import _original_cell_birth
@@ -166,13 +167,24 @@ def certify_transition_relative_locality(
         raise ValueError('Witness image shape does not match')
     if witness.event_value is None or not np.isfinite(witness.event_value):
         raise ValueError('Expected a finite death-event threshold')
-    candidate = eligible_filling_cells_in_box(
-        image, dimension=witness.dimension, event_value=witness.event_value,
-        lower=lower, upper=upper, max_candidates=max_new_cells,
-        max_examined_cells=max_examined_cells)
     grid_shape = tuple(2*int(n)+1 for n in image.shape)
-    new = [int(c) for c in candidate if
-           _original_cell_birth(image, int(c), grid_shape) == witness.event_value]
+    low = tuple(map(int, lower))
+    high = tuple(map(int, upper))
+    if (len(low) != image.ndim or len(high) != image.ndim
+            or any(a < 0 or b < a or b >= g
+                   for a, b, g in zip(low, high, grid_shape))):
+        raise ValueError('Box must lie inside the doubled grid')
+    if prod(b-a+1 for a,b in zip(low,high)) > max_examined_cells:
+        raise MemoryError('Box exceeds max_examined_cells')
+    new = []
+    for coords in product(*(range(a,b+1) for a,b in zip(low,high))):
+        if sum(c & 1 for c in coords) != witness.dimension+1:
+            continue
+        cell = int(np.ravel_multi_index(coords, grid_shape))
+        if _original_cell_birth(image, cell, grid_shape) == witness.event_value:
+            new.append(cell)
+            if len(new)>max_new_cells:
+                raise MemoryError('New candidate count exceeds max_new_cells')
     return certify_relative_filling(
         image, witness.relation_support, new, dimension=witness.dimension,
         event_value=witness.event_value, max_grid_cells=max_grid_cells,
