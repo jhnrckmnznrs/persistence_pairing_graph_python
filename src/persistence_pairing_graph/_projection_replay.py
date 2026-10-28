@@ -43,6 +43,7 @@ class SelectiveProjectionReplay(SelectiveInclusionReplay):
     def __init__(self, trace, **kwargs):
         super().__init__(trace, **kwargs)
         self.last_projection_stats: ProjectionStatistics | None = None
+        self.last_activated_cancellations: tuple[int, ...] | None = None
 
     def project(
         self, original_grid_cells: Iterable[int], *,
@@ -50,6 +51,7 @@ class SelectiveProjectionReplay(SelectiveInclusionReplay):
         max_output_cells: int = 500_000,
         max_processed_records: int = 5_000_000,
         max_tail_terms: int = 5_000_000,
+        record_activations: bool = False,
     ) -> np.ndarray:
         if min(max_output_cells,max_processed_records,max_tail_terms) <= 0:
             raise ValueError('Projection resource limits must be positive')
@@ -89,6 +91,8 @@ class SelectiveProjectionReplay(SelectiveInclusionReplay):
             schedule(cell)
         processed = 0
         tails = 0
+        self.last_activated_cancellations = None
+        activations: list[int] | None = [] if record_activations else None
         while heap:
             j = heappop(heap)
             a = int(self.records[j]['birth'])
@@ -99,6 +103,8 @@ class SelectiveProjectionReplay(SelectiveInclusionReplay):
             if processed > max_processed_records:
                 raise MemoryError('Projection exceeded max_processed_records')
             if a in chain:
+                if activations is not None:
+                    activations.append(j)
                 chain.remove(a)
                 record = self.records[j]
                 start = int(record['offset'])
@@ -118,6 +124,8 @@ class SelectiveProjectionReplay(SelectiveInclusionReplay):
                for cell in chain):
             raise RuntimeError('Projection left a canceled generator')
         result = np.asarray(sorted(chain),dtype=np.int64)
+        if activations is not None:
+            self.last_activated_cancellations = tuple(activations)
         self.last_projection_stats = ProjectionStatistics(
             self.n,cutoff,processed,tails,input_size,len(result))
         return result
