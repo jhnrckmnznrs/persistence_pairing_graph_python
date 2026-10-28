@@ -205,3 +205,31 @@ def test_lazy_cocycle_annihilates_every_old_boundary():
                     boundary=boundary_old_chain([old_cell],analysis.grid_shape)
                     assert oracle.evaluate_cocycle(phi,boundary,
                            dimension=q,event_value=3)==0
+
+
+@pytest.mark.parametrize('side',[3,5,9])
+def test_one_new_square_can_force_quadratic_original_filling_support(side):
+    # The selected outer cycle has 4*side edges, but its unique filling
+    # in the complete disk uses side^2 squares. The death event adds one
+    # central square. This is an output-size obstruction, not a speed test.
+    image=np.ones((side,side),dtype=np.uint8)
+    image[side//2,side//2]=2
+    grid=(2*side+1,)*2
+    old=cells(image,2,lambda t:t<2)
+    new=cells(image,2,lambda t:t==2)
+    assert len(old)==side*side-1 and len(new)==1
+    outer=boundary_old_chain([*old,*new],grid)
+    assert len(outer)==4*side
+    with PPGAnalysis(image,retain_inclusion_trace=True) as analysis:
+        oracle=SparseOldLevelOracle(analysis)
+        assert not oracle.coordinates(outer,dimension=1,event_value=2).is_boundary
+        decision=oracle.restricted_relative(
+            outer,new,dimension=1,event_value=2,reconstruct=False)
+        assert decision.feasible and not decision.old_filling_reconstructed
+        complete=oracle.restricted_relative(
+            outer,new,dimension=1,event_value=2,reconstruct=True)
+        assert complete.feasible and complete.old_filling_reconstructed
+        assert len(complete.new_filling_cells)==1
+        assert len(complete.old_filling_cells)==side*side-1
+        assert np.array_equal(boundary_old_chain(
+            [*complete.old_filling_cells,*complete.new_filling_cells],grid),outer)
