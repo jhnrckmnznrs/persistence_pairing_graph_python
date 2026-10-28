@@ -277,6 +277,58 @@ the specimen selection independent of target permeability.
 
 Do not delete or overwrite the original successful 12³ audit output.
 
+## Critical-cell ablation: nontrivial alternative-death test
+
+The first actual `10_01` quarter-region audit (24³ and 32³) had
+**6 selected finite H1/H2 events**, 24/24 feasible region queries
+at radii 0, 1, 2, 4, six reconstructed fillings with direct original-grid
+boundary checks, and **zero independent reference comparisons**.
+The larger 32³ crop had 24 finite positive H1 intervals and 10 H2
+intervals; the smaller 24³ crop had four H1 intervals and no H2
+intervals reported.
+
+**Caution:** Every region is centered on the paired critical death cell,
+which itself belongs to the event-time new-cell candidate set at radius 0.
+The relative old-cell correction remains unrestricted anywhere in the
+cropped complex. Consequently 24/24 feasibility, including radius 0,
+does not prove geometric locality of the **whole** filling and may be
+a consequence of the ordinary persistence death relation.
+
+An experimental `--exclude-critical-cell` control removes that
+specific paired death cell from **every** candidate new-cell set,
+without excluding other equal-value event-time cells. Now each query
+asks whether an *alternative same-level filling* exists, modulo the
+old sublevel chains; non-feasibility yields an exact verified dual
+obstruction when the oracle succeeds. This is an ablation/control,
+**not** a geometric localization theorem: arbitrary old correction
+cells can still be global.
+
+Run the same saved two-crop manifest with different output directory:
+
+```bash
+python benchmarks/certificate_audit.py run \\
+  --manifest "$HOME/temp/drp372/ppg_quarter_pilot/cohort_manifest.json" \\
+  --output "$HOME/temp/drp372/ppg_quarter_critical_cell_ablation" \\
+  --radii 0 1 2 4 \\
+  --no-global \\
+  --exclude-critical-cell \\
+  --max-events-per-dimension 2 \\
+  --decision-repeats 2 \\
+  --max-original-cells 1000000 \\
+  --max-new-cells 2000 \\
+  --max-reference-queries 1 \\
+  --timeout-s 600
+```
+
+The summary now reports the ablation flag, number of verified
+dual obstructions, number of regions retaining the critical cell,
+and the first feasible tested radius for each event. Compare the
+original and ablated `regions.csv` by volume and event ID. For
+independent reference feasibility on 24³/32³, the default *grid-cell*
+cap is 30,000 (both cases exceed it), and increasing it requires
+careful separate memory/time planning—reference counts of zero
+must never be presented as agreement with independent verification.
+
 ## Stage 3: scientific protocol
 
 After the software pipeline passes:
