@@ -99,3 +99,39 @@ def test_all_new_faces_seed_old_components():
                                 old_solver='full')
     assert selected.feasible==ref.feasible
     assert selected.old_candidate_count==len(old)
+
+
+def test_existing_exact_witness_fast_positive_and_bounded_fallback():
+    from persistence_pairing_graph import (
+        transition_filling_witness, certify_transition_relative_locality)
+    image = np.asarray([
+        [0,0,0,0,0,0,0,0,0,0,0],
+        [0,30,30,30,30,30,30,30,30,30,0],
+        [0,30,10,10,10,30,20,20,20,30,0],
+        [0,30,10,90,10,30,20,80,20,30,0],
+        [0,30,10,10,10,30,20,20,20,30,0],
+        [0,30,30,30,30,30,30,30,30,30,0],
+        [0,0,0,0,0,0,0,0,0,0,0],
+    ],dtype=np.uint8)
+    witness=transition_filling_witness(image,2)
+    box=dict(lower=(0,0),upper=(14,22))
+    # The exact witness is a sufficient certificate independent of global
+    # old-cell enumerations or a costly full elimination.
+    quick=certify_transition_relative_locality(
+        image,witness,**box,max_grid_cells=1,max_examined_cells=1)
+    assert quick.feasible
+    assert quick.old_solver == 'witness'
+    assert quick.boundary_rank == -1
+    assert np.array_equal(
+        boundary_old_chain([*quick.old_filling_cells,*quick.new_filling_cells],
+                           (15,23)), witness.relation_support)
+    # Independent old-incidence route verifies the same feasibility.
+    slower=certify_transition_relative_locality(
+        image,witness,**box,use_existing_witness=False)
+    assert slower.feasible
+    assert slower.old_solver=='component'
+    # Excluding all event-level cells must not trigger a false positive.
+    excluded=certify_transition_relative_locality(
+        image,witness,lower=(0,0),upper=(0,0))
+    assert not excluded.feasible
+    assert excluded.old_solver=='component'
