@@ -220,6 +220,7 @@ def certify_transition_relative_locality(
     old_solver: str = 'component',
     max_examined_cofaces: int = 500_000,
     max_component_faces: int = 200_000,
+    use_existing_witness: bool = True,
 ) -> RelativeLocalityCertificate:
     """Localize new cells for a complete PPG death relation, not a single edge.
 
@@ -238,6 +239,42 @@ def certify_transition_relative_locality(
             or any(a < 0 or b < a or b >= g
                    for a, b, g in zip(low, high, grid_shape))):
         raise ValueError('Box must lie inside the doubled grid')
+    # Verified one-sided positive certificate: an already constructed exact
+    # filling is a feasible relative solution whenever all its event-level
+    # (q+1)-cells lie in the proposed box. If they do not, the region might
+    # STILL support another filling, so continue to the complete oracle.
+    if use_existing_witness and hasattr(witness, 'filling_grid_indices'):
+        filling = np.asarray(witness.filling_grid_indices, dtype=np.int64)
+        relation = np.asarray(witness.relation_support, dtype=np.int64)
+        if not np.array_equal(boundary_old_chain(filling, grid_shape), relation):
+            raise ValueError('Existing witness fails the exact boundary check')
+        if any(_original_cell_birth(image,int(c),grid_shape) >= witness.event_value
+               for c in relation):
+            raise ValueError('Witness relation is not an old cycle')
+        old_part, new_part = [], []
+        for c in filling:
+            cell = int(c)
+            if not 0 <= cell < prod(grid_shape):
+                raise ValueError('Witness contains a cell outside the doubled grid')
+            coords = tuple(int(x) for x in np.unravel_index(cell,grid_shape))
+            if sum(x&1 for x in coords) != witness.dimension+1:
+                raise ValueError('Existing witness has incorrect cell dimension')
+            birth = _original_cell_birth(image,cell,grid_shape)
+            if birth > witness.event_value:
+                raise ValueError('Existing witness exceeds the event filtration')
+            if birth < witness.event_value:
+                old_part.append(cell)
+            else:
+                new_part.append((cell,coords))
+        if all(all(a<=x<=b for a,x,b in zip(low,coords,high))
+               for cell,coords in new_part):
+            return RelativeLocalityCertificate(
+                True, witness.dimension, witness.event_value, grid_shape,
+                relation, len(old_part), len(new_part),
+                np.asarray(old_part,dtype=np.int64),
+                np.asarray([cell for cell,coords in new_part],dtype=np.int64),
+                np.empty(0,dtype=np.int64),
+                -1, 0, 0, 0, 'witness')
     if prod(b-a+1 for a,b in zip(low,high)) > max_examined_cells:
         raise MemoryError('Box exceeds max_examined_cells')
     new = []
