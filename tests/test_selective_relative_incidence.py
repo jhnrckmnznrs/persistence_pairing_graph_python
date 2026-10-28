@@ -80,8 +80,10 @@ def test_component_work_cap_and_unknown_mode():
     with pytest.raises(ValueError,match='old_solver'):
         certify_relative_filling(image,[],[],dimension=1,event_value=2,
                                  old_solver='unsafe')
+    old=_cells(image,2,lambda x:x<2)
+    relation=boundary_old_chain([old[0]],(9,9))
     with pytest.raises(MemoryError,match='max_examined_cofaces'):
-        certify_relative_filling(image,[],[],dimension=1,event_value=2,
+        certify_relative_filling(image,relation,[],dimension=1,event_value=2,
                                  max_examined_cofaces=1)
 
 
