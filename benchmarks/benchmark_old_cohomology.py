@@ -26,7 +26,7 @@ from persistence_pairing_graph._transition_witness import _original_cell_birth
 from investigate_dependency_closure import volume
 
 
-def run_case(n, pattern, max_events=2):
+def run_case(n, pattern, max_events=2, max_full_size=16):
     image=volume(n,pattern)
     setup_begin=perf_counter()
     rows=[]
@@ -68,14 +68,23 @@ def run_case(n, pattern, max_events=2):
                     event_value=event,reconstruct=True)
                 sparse_complete_s=perf_counter()-begin
                 assert coordinate.feasible==complete.feasible
-                begin=perf_counter()
-                reference=certify_relative_filling(
-                    image,w.relation_support,candidates,
-                    dimension=w.dimension,event_value=event,
-                    old_solver='full',max_grid_cells=1_000_000,
-                    max_old_cells=100_000,max_boundary_rows=150_000)
-                full_s=perf_counter()-begin
-                assert coordinate.feasible==reference.feasible
+                full_s = None
+                full_old_columns = None
+                if n <= max_full_size:
+                    begin=perf_counter()
+                    reference=certify_relative_filling(
+                        image,w.relation_support,candidates,
+                        dimension=w.dimension,event_value=event,
+                        old_solver='full',max_grid_cells=1_000_000,
+                        max_old_cells=100_000,max_boundary_rows=150_000)
+                    full_s=perf_counter()-begin
+                    full_old_columns=reference.old_candidate_count
+                    assert coordinate.feasible==reference.feasible
+                else:
+                    # PPG existing witness ensures feasibility of the
+                    # positive query; nonexistence for T={} is checked
+                    # algebraically, without an impractical full baseline.
+                    assert coordinate.feasible == (label=='positive')
                 if complete.feasible:
                     assert np.array_equal(
                         boundary_old_chain(
@@ -84,8 +93,8 @@ def run_case(n, pattern, max_events=2):
                 row[label]={"feasible":coordinate.feasible,
                      "coordinate_s":round(coord_s,6),
                      "sparse_complete_s":round(sparse_complete_s,6),
-                     "reference_full_s":round(full_s,6),
-                     "full_old_columns":reference.old_candidate_count,
+                     "reference_full_s":round(full_s,6) if full_s is not None else None,
+                     "full_old_columns":full_old_columns,
                      "relative_kernel":coordinate.relative_kernel_generators,
                      "coordinate_rank":coordinate.coordinate_rank,
                      "new_filling_cells":len(complete.new_filling_cells)}
@@ -100,16 +109,17 @@ def run_case(n, pattern, max_events=2):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument("--sizes",nargs="+",type=int,default=[5,7,9])
+    p.add_argument("--sizes",nargs="+",type=int,default=[5,7,9,12,16,24,32])
     p.add_argument("--patterns",nargs="+",default=["noise","correlated","cavity"])
     p.add_argument("--events",type=int,default=2)
+    p.add_argument("--max-full-size",type=int,default=16)
     p.add_argument("--json",type=Path)
     args=p.parse_args()
     out=[]
     for n in args.sizes:
         for pattern in args.patterns:
             try:
-                report=run_case(n,pattern,args.events)
+                report=run_case(n,pattern,args.events,args.max_full_size)
                 out.append(report)
                 for row in report["events"]:
                     pos=row.get("positive",{})
