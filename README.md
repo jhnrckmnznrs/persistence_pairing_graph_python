@@ -635,3 +635,8 @@ traces. They do **not** demonstrate a fully out-of-core algorithm, nor imply
 that small support or fast lifting is guaranteed for arbitrary volumetric
 data. Construction still scales with the complete input complex and may
 dominate one-off analyses.
+
+
+### Exact local filling certificates (experimental)
+
+For a complete PPG death-event relation, `certify_local_filling` decides whether it bounds using a specified set of original cubical cells. A feasible result contains a verified filling; an infeasible result contains a dual cochain witnessing the obstruction over `GF(2)`. `certify_transition_filling_locality` restricts candidate cells to a given doubled-grid box at the event's filtration threshold. The method is resource-bounded and is **not** a minimum-support or large-volume solver. See [the mathematical usage notes](docs/local_filling_certificates.md) and `tests/test_filling_locality.py`.
