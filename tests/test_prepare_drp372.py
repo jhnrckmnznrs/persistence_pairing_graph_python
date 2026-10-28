@@ -91,7 +91,8 @@ def test_adapter_pilot_runs_complete_ppg_audit_on_h2_shell(tmp_path):
     prepared = tmp_path / "prepared"
     drp.generate(cohort_csv=csvpath,root=root,output=prepared,
                  crop_sizes=(12,),origins=("center",),limit=1,
-                 filtrations=("sedt",), levels_per_voxel=32)
+                 filtrations=("sedt",), levels_per_voxel=32,
+                 sedt_source="recompute")
     script=Path(__file__).resolve().parents[1]/"benchmarks"/"certificate_audit.py"
     run=subprocess.run([
         sys.executable,str(script),"run",
@@ -162,3 +163,105 @@ def test_sedt_requires_explicit_verified_scale(tmp_path):
     q = drp.signed_edt_uint16(input_mask, levels_per_voxel=64)
     assert int(q[2,2,2]) == 32768+64
     assert int(q[2,2,1]) == 32768-64
+
+
+def make_saved_stage_e_fixture(root, mat, *, wrong_hash=False):
+    """Use a synthetic 256^3 TIFF with known correct pore-negative signs."""
+    tifffile = pytest.importorskip("tifffile")
+    h5py = pytest.importorskip("h5py")
+    with h5py.File(mat,"r") as h:
+        binary=np.asarray(h["bin"])
+    # This fixture checks reuse/provenance and orientation, not the
+    # numerical Euclidean distance computation tested separately.
+    enc=np.where(binary==0,32704,32832).astype(np.uint16)
+    folder=root/"sedt_stage_e"/"sedt"
+    folder.mkdir(parents=True,exist_ok=True)
+    tif=folder/"339_02_sedt_u16.tif"
+    tifffile.imwrite(tif,enc,photometric="minisblack")
+    with (root/"sedt_stage_e"/"sedt_manifest.csv").open(
+            "w",newline="",encoding="utf-8") as stream:
+        fields=["sample","status","input_binary_sha256_observed",
+                "levels_per_voxel","zero_code","output_path",
+                "output_sha256","encoded_min","encoded_max",
+                "family_validation_group","project_validation_group",
+                "primary_outer_fold"]
+        w=csv.DictWriter(stream,fieldnames=fields)
+        w.writeheader()
+        w.writerow({
+            "sample":"339_02","status":"ok",
+            "input_binary_sha256_observed":drp.sha256(mat),
+            "levels_per_voxel":"64.0","zero_code":"32768",
+            "output_path":"/home/john-rick/Desktop/drp372/drp372_256/sedt_stage_e/sedt/339_02_sedt_u16.tif",
+            "output_sha256":("0"*64 if wrong_hash else drp.sha256(tif)),
+            "encoded_min":int(enc.min()),"encoded_max":int(enc.max()),
+            "family_validation_group":"family_339",
+            "project_validation_group":"DRP339","primary_outer_fold":"2",
+        })
+    return tif
+
+
+def test_saved_stage_e_reuses_old_tiff_and_rebases_stale_paths(tmp_path,monkeypatch):
+    root, csvpath, mat = build_fixture(tmp_path)
+    saved=make_saved_stage_e_fixture(root,mat)
+    def forbid_recompute(*args,**kwargs):
+        raise AssertionError("Unexpected full-volume EDT recomputation")
+    monkeypatch.setattr(drp,"signed_edt_uint16",forbid_recompute)
+    out=tmp_path/"using_saved_stage_e"
+    report=drp.generate(
+        cohort_csv=csvpath,root=root,output=out,
+        limit=1,crop_sizes=(12,),origins=("center",),
+        filtrations=("sedt","binary"),levels_per_voxel=64)
+    assert report["samples"]==1 and report["crops"]==2
+    assert report["sedt_source"]=="stage-e"
+    manifest=json.loads((out/"cohort_manifest.json").read_text())
+    assert len(manifest["volumes"])==2
+    assert all(e["group"]=="family_339" for e in manifest["volumes"])
+    sediment=next(e for e in manifest["volumes"] if e["id"].endswith("__sedt"))
+    crop=np.load(out/sediment["path"])
+    assert crop.dtype==np.uint16
+    assert crop[0,0,0]==32704 and crop[5,5,5]==32832
+    with (out/"crop_provenance.csv").open(newline="") as f:
+        rows=list(csv.DictReader(f))
+    sedt_row=next(e for e in rows if e["id"].endswith("__sedt"))
+    assert sedt_row["stage_e_original_tiff_path"]==str(saved)
+    assert sedt_row["stage_e_original_tiff_sha256"]==drp.sha256(saved)
+    assert sedt_row["family_validation_group"]=="family_339"
+    assert sedt_row["historical_primary_outer_fold"]=="2"
+    assert not any("Desktop" in e["cropped_npy_path"] for e in rows)
+
+
+def test_saved_stage_e_rejects_changed_hash_or_wrong_scale(tmp_path):
+    root, csvpath, mat = build_fixture(tmp_path)
+    make_saved_stage_e_fixture(root,mat,wrong_hash=True)
+    with pytest.raises(ValueError,match="SHA-256 mismatch"):
+        drp.generate(
+            cohort_csv=csvpath,root=root,output=tmp_path/"bad_hash",
+            limit=1,crop_sizes=(12,),origins=("center",),
+            filtrations=("sedt",),levels_per_voxel=64)
+    with pytest.raises(ValueError,match="levels_per_voxel"):
+        drp.generate(
+            cohort_csv=csvpath,root=root,output=tmp_path/"wrong_scale",
+            limit=1,crop_sizes=(12,),origins=("center",),
+            filtrations=("sedt",),levels_per_voxel=32)
+
+
+def test_saved_stage_e_rejects_wrong_axis_alignment(tmp_path):
+    root, csvpath, mat = build_fixture(tmp_path)
+    tif=make_saved_stage_e_fixture(root,mat)
+    tifffile=pytest.importorskip("tifffile")
+    original=tifffile.imread(tif)
+    altered=original.copy()
+    # Shift the phase-matched shell by one voxel while keeping TIFF valid.
+    altered=np.roll(altered,1,axis=0)
+    tifffile.imwrite(tif,altered,photometric="minisblack")
+    manifest=root/"sedt_stage_e"/"sedt_manifest.csv"
+    rows=list(csv.DictReader(manifest.open(newline="")))
+    rows[0]["output_sha256"]=drp.sha256(tif)
+    with manifest.open("w",newline="") as f:
+        w=csv.DictWriter(f,fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    with pytest.raises(ValueError,match="phase/axis mismatch"):
+        drp.generate(cohort_csv=csvpath,root=root,output=tmp_path/"axis_bad",
+                     limit=1,crop_sizes=(12,),origins=("center",),
+                     filtrations=("sedt",),levels_per_voxel=64)

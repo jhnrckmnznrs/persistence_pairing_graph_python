@@ -666,3 +666,8 @@ python benchmarks/certificate_audit.py run --manifest cohort.json --output audit
 ```
 
 This workflow requires the sparse old-level API introduced in the stacked research branch (PR #5) and is developed separately in PR #6. See the protocol for scope, resource caps, and reporting rules.
+
+
+### Reusing the verified 119-case DRP-372 Stage E filtration
+
+The historical Stage E/Stage F/Stage G audit confirms SEDT **64 levels per voxel** and zero code **32768**, not the provisional scale 32. Run `benchmarks/prepare_drp372_cohort.py` with `--sedt-source stage-e --levels-per-voxel 64` to reuse the saved 256³ uint16 TIFFs in `drp372_256/sedt_stage_e/sedt/` instead of recomputing distances. The loader verifies the frozen Stage E manifest SHA-256, source binary SHA-256, TIFF dimensions and quantized extrema, and crop-level phase/axis consistency; old absolute paths are rebased to the current data root. The saved full-volume PPG features remain the authoritative baseline. See [the DRP-372 protocol](docs/drp372_cropped_certificate_pilot.md).

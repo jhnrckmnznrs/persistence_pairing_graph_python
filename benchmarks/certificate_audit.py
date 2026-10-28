@@ -138,6 +138,50 @@ def select_events(nodes, *, max_per_dimension: int, event_ids=None,
     return chosen
 
 
+def count_persistence_events(nodes) -> dict[str, dict]:
+    """Report all dimensions before selecting finite positive H1/H2 events.
+
+    Zero-persistence intervals are counted separately; they are not
+    eligible death-event certificates under the current protocol.
+    """
+    counts: dict[str, dict] = {}
+    for node in nodes:
+        q = str(int(node.dimension))
+        result = counts.setdefault(q, {
+            "finite_positive": 0,
+            "finite_zero": 0,
+            "essential": 0,
+            "max_finite_persistence": 0,
+        })
+        if node.essential:
+            result["essential"] += 1
+        elif node.persistence > 0:
+            result["finite_positive"] += 1
+            result["max_finite_persistence"] = max(
+                result["max_finite_persistence"], float(node.persistence))
+        else:
+            result["finite_zero"] += 1
+    return counts
+
+
+def summarize_filtration(image: np.ndarray) -> dict:
+    histogram = np.bincount(
+        np.asarray(image).ravel(),
+        minlength=65536 if image.dtype == np.dtype("uint16") else 0)
+    result = {
+        "filtration_min": int(image.min()),
+        "filtration_max": int(image.max()),
+        "filtration_distinct_levels": int(np.count_nonzero(histogram)),
+    }
+    if image.dtype == np.dtype("uint16"):
+        # These are only intensity-code bins. Their interpretation as
+        # pore/solid is specific to DRP-372's offset-32768 SEDT.
+        result["code_below_32768"] = int(histogram[:32768].sum())
+        result["code_at_32768"] = int(histogram[32768])
+        result["code_above_32768"] = int(histogram[32769:].sum())
+    return result
+
+
 def region_bounds(center: tuple[int, ...], grid_shape: tuple[int, ...],
                   radius: int | None):
     if radius is None:
@@ -232,6 +276,7 @@ def benchmark_volume(entry, opts, out_jsonl: Path) -> None:
         "group": entry.get("group"), "split": entry.get("split"),
         "voxel_spacing_mm": entry.get("voxel_spacing_mm"),
         "load_and_hash_s": round(perf_counter()-t0, 6),
+        **summarize_filtration(image),
     }
     if np.prod(grid_shape) > opts["max_original_cells"]:
         raise MemoryError("Input doubled grid exceeds max_original_cells")
@@ -249,6 +294,8 @@ def benchmark_volume(entry, opts, out_jsonl: Path) -> None:
         volume_info["compressed_generators"] = len(analysis.compressed)
         volume_info["canceled_pairs"] = int(analysis.compressed.lift_trace.n_pairs)
         volume_info["peak_rss_kib_after_build"] = rss_kib()
+        inventory = count_persistence_events(analysis.nodes)
+        volume_info["persistence_event_inventory"] = inventory
         emit(out_jsonl, volume_info)
 
         selected = select_events(
@@ -256,6 +303,18 @@ def benchmark_volume(entry, opts, out_jsonl: Path) -> None:
             max_per_dimension=opts["max_events_per_dimension"],
             event_ids=entry.get("event_ids"),
         )
+        emit(out_jsonl, {
+            "kind": "event_inventory", "id": entry["id"],
+            "by_dimension": inventory,
+            "eligible_h1": inventory.get("1", {}).get("finite_positive", 0),
+            "eligible_h2": inventory.get("2", {}).get("finite_positive", 0),
+            "selected_events": selected,
+            "selection_status": ("selected" if selected
+                                 else "no_eligible_finite_positive_h1_h2"),
+        })
+        if not selected:
+            # Avoid needless oracle indexing and report why no queries ran.
+            return
         start = perf_counter()
         oracle = SparseOldLevelOracle(
             analysis, max_output_cells=opts["max_chain_terms"],
@@ -322,8 +381,13 @@ def benchmark_volume(entry, opts, out_jsonl: Path) -> None:
                     new, examined = allowed_new_in_bounds(
                         image, grid_shape, node.dimension, node.death_value,
                         lo, hi, max_examined=opts["max_examined_region_cells"],
-                        max_new=opts["max_new_cells"],
+                        max_new=opts["max_new_cells"] + int(
+                            opts["exclude_critical_cell"]),
                     )
+                    result["critical_cell_is_new_candidate"] = death_cell in new
+                    if opts["exclude_critical_cell"]:
+                        new = [cell for cell in new if cell != death_cell]
+                    result["critical_cell_included"] = death_cell in new
                     result["candidate_new_cells"] = len(new)
                     result["examined_grid_cells"] = examined
                     result["candidate_enumeration_s"] = round(perf_counter()-start, 6)
@@ -509,6 +573,7 @@ def run(args) -> int:
         "reference_max_boundary_rows": args.reference_max_boundary_rows,
         "max_reference_queries": args.max_reference_queries,
         "compare_component_reference": args.compare_component_reference,
+        "exclude_critical_cell": args.exclude_critical_cell,
     }
     (output / "configuration.json").write_text(json.dumps({
         "manifest": entries, "options": options,
@@ -546,6 +611,7 @@ def run(args) -> int:
                     records.append(json.loads(line))
     event_rows = [x for x in records if x.get("kind") == "event"]
     region_rows = [x for x in records if x.get("kind") == "region"]
+    inventory_rows = [x for x in records if x.get("kind") == "event_inventory"]
     for event in event_rows:
         related = [r for r in region_rows
                    if r.get("id") == event["id"]
@@ -570,9 +636,25 @@ def run(args) -> int:
     summary = {
         "schema_version": SCHEMA_VERSION, "volumes": len(entries),
         "events": len(event_rows), "regions": len(region_rows),
+        "zero_event_volumes": [
+            x["id"] for x in inventory_rows
+            if x["selection_status"] == "no_eligible_finite_positive_h1_h2"
+        ],
+        "event_inventories": {
+            x["id"]: x["by_dimension"] for x in inventory_rows
+        },
         "feasible_regions": sum(r.get("feasible") is True for r in region_rows),
         "infeasible_regions": sum(r.get("feasible") is False for r in region_rows),
         "verified_reconstructions": sum(r.get("verified") is True for r in region_rows),
+        "exclude_critical_cell": args.exclude_critical_cell,
+        "verified_dual_obstructions": sum(
+            r.get("dual_verified_on_relation") is True for r in region_rows),
+        "critical_cell_included_regions": sum(
+            r.get("critical_cell_included") is True for r in region_rows),
+        "first_feasible_radius_by_event": {
+            f"{e['id']}:{e['event_id']}": e["first_sufficient_tested_radius"]
+            for e in event_rows
+        },
         "reference_comparisons": sum(
             r.get("reference_status") == "verified" for r in region_rows),
         "component_reference_comparisons": sum(
@@ -617,6 +699,9 @@ def main() -> int:
     command.add_argument("--reference-max-boundary-rows", type=int, default=30_000)
     command.add_argument("--max-reference-queries", type=int, default=3)
     command.add_argument("--compare-component-reference", action="store_true")
+    command.add_argument("--exclude-critical-cell", action="store_true",
+                         help="Ablate the paired death cell from all t-level new-cell "
+                              "candidate sets; old correction cells remain globally allowed")
     args = parser.parse_args()
     if args.command == "_worker":
         return _worker(args.config, args.result)

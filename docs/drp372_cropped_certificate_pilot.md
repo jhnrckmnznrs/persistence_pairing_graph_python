@@ -63,14 +63,23 @@ embedded in older Stage G summaries may refer to a former
 `~/Desktop/drp372` location; the preflight resolves files in the
 current workspace instead.
 
-**Do not run the SEDT crop adapter with an unverified encoding scale.**
-The adapter now requires explicit `--levels-per-voxel S` whenever
-`--filtrations` contains `sedt`. Use the saved Stage E parameters
-and inspect the original `drp372_prepare_sedt.py` before specifying
-this value. If Stage E already stores uint16 256³ SEDT arrays, prefer
-reusing them without recomputing the Euclidean distances; first verify
-their actual filenames, axis order, hash and quantization. The current
-adapter still computes SEDT from the original binary when selected.
+**Scale and saved files verified by your preflight.** The frozen 119-case
+Stage E manifest and original source script both confirm
+`levels_per_voxel=64.0`, `zero_code=32768`, and quantization step
+`1/64` voxel. The new adapter's **default** is
+`--sedt-source stage-e`, which reuses the existing
+`sedt_stage_e/sedt/<sample>_sedt_u16.tif` after verifying the original
+source MAT SHA-256, saved TIFF SHA-256, encoded extrema, dtype, shape
+and crop-level sign/axis agreement with the binary source.
+The obsolete absolute `~/Desktop/drp372` path is never used to
+retrieve the TIFF. A mismatch fails rather than silently recomputing.
+
+Only `--sedt-source recompute` recomputes the full 256³ SEDT and it
+must be explicitly requested; recomputation is **not** the recommended
+reproduction path. The new certificate backend still builds its own
+PPG/reduction **for cropped inputs**. Stage F outputs are retained
+for original full-rock comparisons, not assumed to contain a reusable
+Python filtered contraction.
 
 **Validation-fold caution:** Stage G's project-group labels DRP16,
 DRP317, and DRP374 occur in multiple primary folds. This is not
@@ -78,20 +87,33 @@ project-disjoint validation as recorded; check the original grouping
 script for whether folds were built around a different family/grouping
 criterion before reusing earlier model scores.
 
+**Your verified local paths (from the recovered workspace):**
+
+```text
+~/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv
+~/temp/drp372/drp372_256/sedt_stage_e/sedt_manifest.csv
+~/temp/drp372/drp372_256/sedt_stage_e/sedt/<sample>_sedt_u16.tif
+```
+
+The root `~/temp/drp372/drp372_256` contains the frozen 119-case
+cohort. Stage E, Stage F and Stage G each report 119 records, and the
+saved Stage F node/edge hashes match across the full cohort.
+
 ## Stage 1: lossless original-voxel pilot crops
 
 ```sh
 python -m pip install -e '.[images,rock,test]'
 
 python benchmarks/prepare_drp372_cohort.py \
-  --root /data/drp372_256 \
-  --cohort-csv /data/drp372_256/cohort_qc/complete_pairs.csv \
-  --output /data/ppg_drp372_pilot \
-  --limit 5 \
+  --root "$HOME/temp/drp372/drp372_256" \
+  --cohort-csv "$HOME/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv" \
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_pilot" \
+  --limit 3 \
   --sizes 12 24 \
   --origins center quarter \
-  --filtrations sedt binary \\
-  --levels-per-voxel YOUR_VERIFIED_STAGE_E_SCALE
+  --filtrations sedt binary \
+  --sedt-source stage-e \
+  --levels-per-voxel 64
 ```
 
 This creates:
@@ -108,20 +130,31 @@ This creates:
 No interpolation, majority downsampling, CT intensity normalization,
 phase inversion or resegmentation is performed.
 
-**Historical primary filtration:** The signed Euclidean distance transform
-is computed on the full original 256³ grid before cropping:
+The output `crop_provenance.csv` also stores each Stage E source TIFF
+hash, current path, its historical family/project validation groups,
+and the original primary outer fold. For future modeling, keep the
+**family group** as the original nonoverlapping fold unit; the
+`DRP16`, `DRP317` and `DRP374` project labels cross folds.
+The audit itself makes no predictive or project-held-out inference.
+
+**Historical primary filtration:** These are the original Stage E
+encoding equations. In the recommended `stage-e` mode, the transform
+below is **not recomputed**; it is already stored in the verified
+full-volume TIFF:
 
 ```python
 s = scipy.ndimage.distance_transform_edt(bin == 1) \
     - scipy.ndimage.distance_transform_edt(bin == 0)
-q = np.uint16(np.clip(np.rint(32768 + S*s), 0, 65535))
+q = np.uint16(np.clip(np.rint(32768 + 64*s), 0, 65535))
 ```
 
 Negative `s` is pore and positive `s` is solid. The primary
 `sedt` outputs are uint16, and the `binary` outputs are separate
 uint8 controls. The offset 32768 and explicitly verified scale `S` should match the
 historical Stage E encoding. The original script must also confirm the
-sign convention, array axes and distance-transform boundary semantics. No per-sample min-max normalization is applied.
+sign convention, array axes and distance-transform boundary semantics. No per-sample min-max normalization is applied. The metadata can be inspected
+without regenerating features, and the cropped TIFF values are bitwise
+copied to the pilot NPY arrays.
 Because the **full-volume** transform is computed first, the interior
 crop distances remain those of the complete rock. However, the
 resulting cropped cubical complex still has artificial topological
@@ -141,16 +174,17 @@ One can select specific samples from the already validated cohort:
 ```sh
 python benchmarks/prepare_drp372_cohort.py \
   --root /data/drp372_256 \
-  --cohort-csv /data/drp372_256/cohort_qc/complete_pairs.csv \
-  --output /data/ppg_drp372_pilot \
-  --sample 339_02 57_04 \
-  --limit 2 \
-  --sizes 12 24
+  --cohort-csv "$HOME/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv" \
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_pilot" \
+  --sample 10_01 \
+  --limit 1 \
+  --sizes 12 24 \
+  --sedt-source stage-e \
+  --levels-per-voxel 64
 ```
 
-Replace those example sample IDs with IDs present in *your* frozen
-`complete_pairs.csv`. Do not assume any demonstration ID belongs to
-the 119-pair complete-case cohort without checking the CSV.
+The preflight explicitly confirms that `10_01` belongs to the frozen
+119-case cohort. Additional IDs should be selected from the audited CSV.
 
 ## Stage 2: exact PPG certificate audit
 
@@ -158,8 +192,8 @@ Start small and use bounded nested regions:
 
 ```sh
 python benchmarks/certificate_audit.py run \
-  --manifest /data/ppg_drp372_pilot/cohort_manifest.json \
-  --output /data/ppg_drp372_audit \
+  --manifest "$HOME/temp/drp372/ppg_stage_e_crops_pilot/cohort_manifest.json" \
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_audit" \
   --radii 0 1 2 4 \
   --no-global \
   --max-events-per-dimension 2 \
@@ -185,6 +219,115 @@ Interpret the end-to-end results in
 `<output>/summary.json`, `events.csv`, `regions.csv`, and the
 per-volume JSONL audit files. Skipped independent full references are
 not silently treated as verified.
+
+## If the first real-rock crop contains no positive-persistence events
+
+On 28 October 2026 the **actual Stage E SEDT crop** of
+`10_01`, size 12³, centered at the volume midpoint, produced:
+
+```json
+{"volumes":1,"events":0,"regions":0,
+ "verified_reconstructions":0,"status":"complete"}
+```
+
+This is **not** a failed relative-filling query and **does not**
+validate certificate reconstruction on the real rock. The selector
+requires finite positive-length H1/H2 bars; small boxes can lack
+such bars even when the full rock has complicated topology.
+
+The audit now reports `event_inventories` (finite positive, finite
+zero, and essential counts by dimension), filtration min/max, distinct
+uint16 levels and numbers of codes below/at/above SEDT zero code
+32768. Examine `summary.json` and each per-volume JSONL record
+to distinguish a homogeneous/uninteresting crop from the selector's
+positive-persistence restriction.
+
+Do not alter the SEDT quantization scale or interpret zero events
+as evidence that the full original 256³ rock has trivial homology.
+
+A small pre-registered **scale and location diagnostic** for specimen
+`10_01` is:
+
+```bash
+python benchmarks/prepare_drp372_cohort.py \\
+  --root "$HOME/temp/drp372/drp372_256" \\
+  --cohort-csv "$HOME/temp/drp372/drp372_256/cohort_qc_v1_1/complete_pairs.csv" \\
+  --output "$HOME/temp/drp372/ppg_stage_e_crops_multiscale" \\
+  --sample 10_01 --limit 1 \\
+  --sizes 24 32 --origins center quarter three_quarter \\
+  --filtrations sedt --sedt-source stage-e \\
+  --levels-per-voxel 64
+
+python benchmarks/certificate_audit.py run \\
+  --manifest "$HOME/temp/drp372/ppg_stage_e_crops_multiscale/cohort_manifest.json" \\
+  --output "$HOME/temp/drp372/ppg_stage_e_audit_multiscale" \\
+  --radii 0 1 2 4 --no-global \\
+  --max-events-per-dimension 2 --decision-repeats 2 \\
+  --max-original-cells 1000000 --max-new-cells 2000 \\
+  --max-reference-queries 1 --timeout-s 600
+```
+
+These are six *non-independent* subvolume cases from one specimen:
+24³ and 32³ at three predetermined locations. Each cropped
+filtration uses the bitwise-saved full-256³ SEDT. This is a software
+and local-topology diagnostic, not evidence of predictive permeability
+associations. If several are still zero-event, expand to **different
+source family groups** using the frozen 119-sample cohort while keeping
+the specimen selection independent of target permeability.
+
+Do not delete or overwrite the original successful 12³ audit output.
+
+## Critical-cell ablation: nontrivial alternative-death test
+
+The first actual `10_01` quarter-region audit (24³ and 32³) had
+**6 selected finite H1/H2 events**, 24/24 feasible region queries
+at radii 0, 1, 2, 4, six reconstructed fillings with direct original-grid
+boundary checks, and **zero independent reference comparisons**.
+The larger 32³ crop had 24 finite positive H1 intervals and 10 H2
+intervals; the smaller 24³ crop had four H1 intervals and no H2
+intervals reported.
+
+**Caution:** Every region is centered on the paired critical death cell,
+which itself belongs to the event-time new-cell candidate set at radius 0.
+The relative old-cell correction remains unrestricted anywhere in the
+cropped complex. Consequently 24/24 feasibility, including radius 0,
+does not prove geometric locality of the **whole** filling and may be
+a consequence of the ordinary persistence death relation.
+
+An experimental `--exclude-critical-cell` control removes that
+specific paired death cell from **every** candidate new-cell set,
+without excluding other equal-value event-time cells. Now each query
+asks whether an *alternative same-level filling* exists, modulo the
+old sublevel chains; non-feasibility yields an exact verified dual
+obstruction when the oracle succeeds. This is an ablation/control,
+**not** a geometric localization theorem: arbitrary old correction
+cells can still be global.
+
+Run the same saved two-crop manifest with different output directory:
+
+```bash
+python benchmarks/certificate_audit.py run \\
+  --manifest "$HOME/temp/drp372/ppg_quarter_pilot/cohort_manifest.json" \\
+  --output "$HOME/temp/drp372/ppg_quarter_critical_cell_ablation" \\
+  --radii 0 1 2 4 \\
+  --no-global \\
+  --exclude-critical-cell \\
+  --max-events-per-dimension 2 \\
+  --decision-repeats 2 \\
+  --max-original-cells 1000000 \\
+  --max-new-cells 2000 \\
+  --max-reference-queries 1 \\
+  --timeout-s 600
+```
+
+The summary now reports the ablation flag, number of verified
+dual obstructions, number of regions retaining the critical cell,
+and the first feasible tested radius for each event. Compare the
+original and ablated `regions.csv` by volume and event ID. For
+independent reference feasibility on 24³/32³, the default *grid-cell*
+cap is 30,000 (both cases exceed it), and increasing it requires
+careful separate memory/time planning—reference counts of zero
+must never be presented as agreement with independent verification.
 
 ## Stage 3: scientific protocol
 
@@ -245,7 +388,7 @@ only against persistence diagrams and graph summaries but also against
 these **structurally constrained null models**. Otherwise, finding
 non-random PPG structure would not establish predictive usefulness.
 
-The new benchmark in PR #8 measures exact spatial certificates and
+The new benchmark workflow measures exact spatial certificates and
 runtime; it does not yet refit any model or rerun these historical
 nulls. After recovering the existing whole-cohort features, we should
 join them by **original sample ID** and retain project-grouped

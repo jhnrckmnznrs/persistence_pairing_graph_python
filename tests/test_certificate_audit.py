@@ -128,7 +128,18 @@ def test_npy_inputs_and_no_events_are_reported(tmp_path):
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     summary = json.loads((tmp_path / "out/summary.json").read_text())
     assert summary["events"] == 0
+    assert summary["zero_event_volumes"] == ["constant"]
+    inventory = summary["event_inventories"]["constant"]
+    assert inventory.get("1", {}).get("finite_positive", 0) == 0
+    assert inventory.get("2", {}).get("finite_positive", 0) == 0
     assert summary["status"] == "complete"
+    records = [json.loads(x) for x in
+               (tmp_path / "out/constant.jsonl").read_text().splitlines()]
+    v = next(x for x in records if x["kind"] == "volume")
+    assert v["filtration_distinct_levels"] == 1
+    assert v["filtration_min"] == v["filtration_max"] == 0
+    assert next(x for x in records if x["kind"] == "event_inventory")[
+        "selection_status"] == "no_eligible_finite_positive_h1_h2"
     assert (tmp_path / "out/regions.csv").is_file()
     again = _run(manifest, tmp_path / "out", "--no-global")
     assert again.returncode != 0
@@ -163,3 +174,83 @@ def test_explicit_bad_event_index_is_not_silently_ignored(tmp_path):
     assert result.returncode == 1
     summary = json.loads((tmp_path / "audit/summary.json").read_text())
     assert summary["status"] == "failed"
+
+
+def test_event_inventory_distinguishes_zero_persistence_and_essential_nodes():
+    from persistence_pairing_graph._graph import PersistenceNode
+    nodes = [
+        PersistenceNode(1, 1, 2, 10, 10),
+        PersistenceNode(1, 3, 4, 10, 12),
+        PersistenceNode(2, 5, None, 12, float("inf")),
+        PersistenceNode(0, 6, 7, 2, 7),
+    ]
+    inv = audit.count_persistence_events(nodes)
+    assert inv["1"] == {
+        "finite_positive": 1,
+        "finite_zero": 1,
+        "essential": 0,
+        "max_finite_persistence": 2.0,
+    }
+    assert inv["2"]["essential"] == 1
+    assert inv["0"]["finite_positive"] == 1
+
+
+def test_uint16_low_codes_histogram_and_signed_offset_counts():
+    low = np.array([1, 4, 1], dtype=np.uint16).reshape((1, 1, 3))
+    q = audit.summarize_filtration(low)
+    assert q["filtration_distinct_levels"] == 2
+    assert q["code_below_32768"] == 3
+    assert q["code_at_32768"] == 0
+    assert q["code_above_32768"] == 0
+    signed = np.array([32704, 32768, 32832],dtype=np.uint16).reshape((1,1,3))
+    got = audit.summarize_filtration(signed)
+    assert got["filtration_distinct_levels"] == 3
+    assert (got["code_below_32768"], got["code_at_32768"],
+            got["code_above_32768"]) == (1,1,1)
+
+
+def test_ablation_excludes_unique_h2_death_cell_and_returns_verified_dual(tmp_path):
+    """A unique high-valued cube kills an H2 shell; excluding it forbids death."""
+    image=np.zeros((5,5,5),dtype=np.uint8)
+    image[2,2,2]=90
+    np.save(tmp_path/"shell.npy",image)
+    manifest=_manifest(tmp_path/"manifest.json",[
+        {"id":"shell","path":"shell.npy"}])
+    result=_run(
+        manifest,tmp_path/"ablated",
+        "--exclude-critical-cell","--no-global",
+        "--reference-max-grid-cells","5000")
+    assert result.returncode==0,result.stdout+"\n"+result.stderr
+    summary=json.loads((tmp_path/"ablated/summary.json").read_text())
+    assert summary["exclude_critical_cell"] is True
+    assert summary["events"]>=1
+    assert summary["critical_cell_included_regions"]==0
+    assert summary["infeasible_regions"]>=1
+    assert summary["verified_dual_obstructions"]>=1
+    rows=[json.loads(t) for t in
+          (tmp_path/"ablated/shell.jsonl").read_text().splitlines()]
+    regions=[x for x in rows if x["kind"]=="region"]
+    assert any(x.get("critical_cell_is_new_candidate") is True
+               for x in regions if x["radius_voxels"]=="0")
+    assert all(x.get("critical_cell_included") is False for x in regions)
+    assert any(x.get("dual_verified_on_relation") is True for x in regions)
+    assert any(x.get("reference_status")=="verified" for x in regions)
+
+
+def test_default_regions_report_critical_cell_without_excluding_it(tmp_path):
+    image=np.zeros((5,5,5),dtype=np.uint8)
+    image[2,2,2]=90
+    np.save(tmp_path/"shell.npy",image)
+    manifest=_manifest(tmp_path/"manifest.json",[
+        {"id":"shell","path":"shell.npy"}])
+    result=_run(manifest,tmp_path/"control","--no-global")
+    assert result.returncode==0,result.stdout+"\n"+result.stderr
+    summary=json.loads((tmp_path/"control/summary.json").read_text())
+    assert summary["exclude_critical_cell"] is False
+    regions=[json.loads(t) for t in
+             (tmp_path/"control/shell.jsonl").read_text().splitlines()]
+    regions=[x for x in regions if x["kind"]=="region"]
+    assert any(x["radius_voxels"]=="0"
+               and x.get("critical_cell_is_new_candidate") is True
+               and x.get("critical_cell_included") is True
+               and x.get("feasible") is True for x in regions)
