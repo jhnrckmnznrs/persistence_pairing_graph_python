@@ -655,3 +655,14 @@ The relative filling oracle now supports `old_solver='component'` (exact old-bou
 ### Sparse old-level cohomology and exact relative certificates (experimental)
 
 `SparseOldLevelOracle` reuses the canonical PPG reduction and filtered cancellation trace to evaluate old-level homology quotient coordinates without enumerating all old cubical filling cells. It can decide whether a selected set of newly entering cells admits a complete PPG relation filling and, when requested, reconstruct an exact original-grid filling via selective chain homotopy. Negative decisions include lazily evaluable cocycle obstructions. See the [mathematical API and validation guide](docs/sparse_old_cohomology_queries.md). The result is basis/reduction-dependent and resource-bounded, not a guarantee of small geometric certificates.
+
+
+### Manifest-driven certificate validation (experimental)
+
+The offline [certificate audit workflow](docs/certificate_audit_protocol.md) accepts a JSON manifest of real uint8/uint16 TIFF/NPY volumes. It runs each volume in a separate process, selects H1/H2 death events deterministically, tests nested critical-cell-centered regions using the sparse cohomology oracle, verifies original-grid fillings and lazy dual obstructions, compares selected small cases with independent exact references, and exports JSONL/CSV reports with timing, memory, failures, and input hashes. It does not copy input images into the outputs or claim predictive/clinical results.
+
+```bash
+python benchmarks/certificate_audit.py run --manifest cohort.json --output audit/ --radii 0 1 2 4 8
+```
+
+This workflow requires the sparse old-level API introduced in the stacked research branch (PR #5) and is developed separately in PR #6. See the protocol for scope, resource caps, and reporting rules.
