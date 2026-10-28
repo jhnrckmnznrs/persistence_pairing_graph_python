@@ -41,7 +41,9 @@ def test_old_level_quotient_coordinates_agree_with_full_original_boundary(shape)
                 oldtop=cells(image,q+1,lambda level:level<t)
                 oldq=cells(image,q,lambda level:level<t)
                 candidates=[]
-                if oldq:
+                if oldq and q==0:
+                    # Every 0-chain is a cycle, but a single q>0 cell
+                    # generally is not; the oracle must reject noncycles.
                     candidates.extend(([oldq[0]],oldq[:2]))
                 candidates.append([])
                 if oldtop:
@@ -138,6 +140,6 @@ def test_query_resource_errors_and_wrong_filtration():
             oracle.restricted_relative([],new,dimension=1,event_value=1)
         with pytest.raises(ValueError):
             oracle.coordinates([new[0]],dimension=1,event_value=2)
-        with pytest.raises(MemoryError):
+        with pytest.raises(ValueError):
             oracle.restricted_relative([],new,dimension=1,event_value=2,
                                         max_new_cells=0)
