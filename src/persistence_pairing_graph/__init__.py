@@ -22,6 +22,7 @@ from ._filling_locality import (FillingLocalityCertificate, certify_local_fillin
                                 certify_transition_filling_locality)
 from ._analysis import PPGAnalysis
 from ._reverse_replay import SelectiveInclusionReplay, ReplayStatistics, DependencyClosureStatistics
+from ._projection_replay import SelectiveProjectionReplay, ProjectionStatistics
 from ._relative_locality import (RelativeLocalityCertificate, certify_relative_filling,
                                   certify_transition_relative_locality)
 from ._multiscale import pool_scalar_field, multiscale_betti_curves, MultiscaleBetti
@@ -29,6 +30,7 @@ from ._robustness import ppg_perturbation_probe, PerturbationReport, Perturbatio
 
 __all__ = [
     'SelectiveInclusionReplay', 'ReplayStatistics', 'DependencyClosureStatistics',
+    'SelectiveProjectionReplay', 'ProjectionStatistics',
     'RelativeLocalityCertificate', 'certify_relative_filling',
     'certify_transition_relative_locality',
     'compute_ppg', 'PersistencePairingGraph', 'PersistenceNode', 'PersistenceEdge', 'CompactNodeTable',
