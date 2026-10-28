@@ -15,12 +15,16 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+from importlib.metadata import PackageNotFoundError, version
 import itertools
 import json
 import os
 from pathlib import Path
 import platform
-import resource
+try:
+    import resource
+except ImportError:  # Windows has no POSIX resource module
+    resource = None
 import subprocess
 import sys
 from time import perf_counter
@@ -96,7 +100,7 @@ def file_sha256(path: Path) -> str:
 
 def load_scalar_volume(path: Path) -> np.ndarray:
     if path.suffix.lower() == ".npy":
-        data = np.load(path, allow_pickle=False)
+        data = np.load(path, allow_pickle=False, mmap_mode='r')
     else:
         try:
             import tifffile
@@ -170,7 +174,7 @@ def allowed_new_in_bounds(image, grid_shape, q, t, lower, upper, *,
 
 def rss_kib() -> int | None:
     # ru_maxrss uses KiB on Linux; other platforms may use different units.
-    if sys.platform != "linux":
+    if sys.platform != "linux" or resource is None:
         return None
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
@@ -436,6 +440,22 @@ def _csv(path: Path, rows: list[dict]) -> None:
                 for key, value in row.items()})
 
 
+def software_revision() -> dict:
+    try:
+        package_version = version("persistence-pairing-graph")
+    except PackageNotFoundError:
+        package_version = None
+    try:
+        git = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True, text=True, timeout=3, check=False)
+        revision = git.stdout.strip() if git.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        revision = None
+    return {"package_version": package_version, "git_commit": revision}
+
+
 def run(args) -> int:
     entries = validate_manifest(args.manifest.resolve())
     if args.max_events_per_dimension < 1 or args.decision_repeats < 1:
@@ -472,7 +492,8 @@ def run(args) -> int:
     (output / "configuration.json").write_text(json.dumps({
         "manifest": entries, "options": options,
         "environment": {"python": sys.version, "numpy": np.__version__,
-                        "platform": platform.platform()},
+                        "platform": platform.platform(),
+                        "software": software_revision()},
     }, indent=2) + "\n", encoding="utf-8")
     failures = []
     for entry in entries:
