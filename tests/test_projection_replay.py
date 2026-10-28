@@ -113,3 +113,26 @@ def test_projection_resources_and_bounds():
         assert len(rep.project([]))==0
     finally:
         compressed.lift_trace.close()
+
+
+def test_synthetic_nonzero_tails_and_filtered_cutoff():
+    # Algebraic stress case deliberately includes nonempty tails and a
+    # dependency from the first cancellation into a second cancellation.
+    class Trace:
+        retain_inclusion_trace=True
+        n_pairs=2
+        grid_shape=(5,5)
+        pairs=np.array([(1,),(2,)],dtype=[('value','<u2')])
+        replay_records=np.array([(1,3,0,1),(5,7,1,1)],
+                 dtype=[('birth','<u4'),('death','<u4'),
+                        ('offset','<u8'),('length','<u4')])
+        replay_tails=np.asarray([5,9],dtype=np.uint32)
+    rep=SelectiveProjectionReplay(Trace(),owner_storage='dict')
+    assert list(rep.project([1]))==[9]
+    assert rep.last_projection_stats.processed_cancellations==2
+    assert rep.last_projection_stats.tail_terms_read==2
+    assert list(rep.project([1],stop_before_value=2))==[5]
+    assert list(rep.project([1,5]))==[]
+    assert list(rep.project([3,7]))==[]
+    with pytest.raises(MemoryError,match='max_processed_records'):
+        rep.project([1],max_processed_records=1)
