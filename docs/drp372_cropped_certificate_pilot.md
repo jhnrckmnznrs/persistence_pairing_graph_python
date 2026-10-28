@@ -98,7 +98,7 @@ This creates:
 
 - `cohort_manifest.json`: directly accepted by
   `benchmarks/certificate_audit.py`.
-- `volumes/<id>.npy`: 2D/3D uint8 arrays (here native 3D crops).
+- `volumes/<id>.npy`: native 3D SEDT uint16 crops and/or binary uint8 controls.
 - `crop_provenance.csv`: sample/source file hashes, input coordinate
   offsets, phase labels, pore fraction, source-group labels and the
   strictly named `permeability (lus)` value where available.
@@ -119,9 +119,9 @@ q = np.uint16(np.clip(np.rint(32768 + S*s), 0, 65535))
 
 Negative `s` is pore and positive `s` is solid. The primary
 `sedt` outputs are uint16, and the `binary` outputs are separate
-uint8 controls. The offset 32768, explicitly verified scale `S`, and SciPy default
-boundary convention reproduce the earlier PPG experiment's stated
-encoding. No per-sample min-max normalization is applied.
+uint8 controls. The offset 32768 and explicitly verified scale `S` should match the
+historical Stage E encoding. The original script must also confirm the
+sign convention, array axes and distance-transform boundary semantics. No per-sample min-max normalization is applied.
 Because the **full-volume** transform is computed first, the interior
 crop distances remain those of the complete rock. However, the
 resulting cropped cubical complex still has artificial topological
