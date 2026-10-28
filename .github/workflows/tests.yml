@@ -28,3 +28,6 @@ jobs:
           python benchmarks/benchmark_selective_relative.py --sizes 5 7 9
           python benchmarks/benchmark_event_closure_3d.py --sizes 5 7 9
           python benchmarks/benchmark_projection_3d.py --sizes 8 16 24 32
+      - name: Sparse old-level cohomology vs full reference (Python 3.12 only)
+        if: ${{ matrix.python-version == '3.12' && github.head_ref == 'research/sparse-old-cohomology-oracle' }}
+        run: python benchmarks/benchmark_old_cohomology.py --sizes 5 7 9 --events 2
