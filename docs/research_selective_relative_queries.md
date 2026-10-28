@@ -214,6 +214,25 @@ selective old-boundary preimage needed to solve the full coordinate system.
 The forward trace must remain available and its filtration levels must
 respect the recorded cancellation order.
 
+
+### Pre-death projection of complete PPG relations
+
+The event-level benchmark also projects each **complete** selected death
+relation through only the cancellations with value strictly below its death
+time. These are meaningful chain queries, unlike the trivial single canceled
+birth probes used for the separate projection microbenchmark. All tested
+pre-death relations remained nonzero after projection, as required by their
+nontrivial old homology class.
+
+Examples: at n=5, the cavity H2 relation used 32 original cycle cells,
+touched 31 cancellation records and projected to one surviving cell;
+at n=9, the cavity H2 relation used 90 cycle cells, touched 89 records
+and also projected to one surviving cell. One n=7 correlated H1 relation
+used 24 cycle cells, touched 21 cancellations and projected to three cells.
+These are small synthetic examples, **not** representative worst-case
+complexity bounds. The tested relation projections read no nonzero stored
+tail terms, so dense-tail cases still require a targeted stress test.
+
 ## 6. Reproducibility and scope
 
 ```sh
