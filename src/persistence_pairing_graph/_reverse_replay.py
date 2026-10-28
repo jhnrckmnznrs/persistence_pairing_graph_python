@@ -215,6 +215,52 @@ class SelectiveInclusionReplay:
         self.cache[cell] = result
         return result
 
+    def lift_canceled_death(self, step: int, *, max_output_cells: int = 500_000):
+        """Lift the death generator at cancellation `step` through earlier maps.
+
+        Returns i_0 ... i_(step-1)(b_step) in the original cubical chain
+        coordinates. This is the homotopy term for a projection that
+        eliminates the birth generator a_step. Unlike `lift`, the seed is
+        deliberately a canceled death, but only *earlier* cancellations
+        are replayed.
+        """
+        if not 0 <= step < self.n:
+            raise IndexError('Cancellation step is out of range')
+        if max_output_cells <= 0:
+            raise ValueError('max_output_cells must be positive')
+        b0 = int(self.records[step]['death'])
+        cells = {b0}
+        active: set[int] = set()
+        pending: list[int] = []
+
+        def toggle(j):
+            if j in active:
+                active.remove(j)
+            else:
+                active.add(j)
+                heappush(pending, -j)
+
+        for j in self._influence(b0):
+            if j >= step:
+                raise RuntimeError('Nontriangular partial inclusion trace')
+            toggle(j)
+        while pending:
+            j = -heappop(pending)
+            if j not in active:
+                continue
+            active.remove(j)
+            death = int(self.records[j]['death'])
+            if death in cells:
+                raise RuntimeError('Duplicate death in partial inclusion replay')
+            cells.add(death)
+            if len(cells) > max_output_cells:
+                raise MemoryError('Partial inclusion exceeds max_output_cells')
+            for k in self._influence(death):
+                if k >= j:
+                    raise RuntimeError('Nontriangular partial inclusion dependency')
+                toggle(k)
+        return np.asarray(sorted(cells), dtype=np.int64)
+
     def lift(self, surviving_original_cells: Iterable[int], *, max_output_cells=500_000,
              collect_dependency_stats: bool = False):
         """Return original-grid support of I(chain), over F2.
