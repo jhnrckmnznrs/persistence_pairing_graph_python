@@ -216,7 +216,8 @@ class SparseOldLevelOracle:
         return int(self._sorted_order[position])
 
     def boundary_preimage(self, cycle: Iterable[int], *, dimension: int,
-                          event_value: int | float) -> np.ndarray:
+                          event_value: int | float,
+                          correction_method: str = 'homotopy') -> np.ndarray:
         """Find an exact original-grid OLD (q+1)-chain with boundary = cycle.
 
         May require a large filling even when the coordinate query is small.
@@ -224,6 +225,8 @@ class SparseOldLevelOracle:
         an old-level canceled-death incidence correction.
         """
         chain = self._validated_old_cycle(cycle,dimension,event_value)
+        if correction_method not in ('homotopy','incidence'):
+            raise ValueError("correction_method must be 'homotopy' or 'incidence'")
         coords = self.coordinates(chain,dimension=dimension,event_value=event_value)
         if coords.coordinates:
             raise ValueError('The selected old cycle does not bound before the event')
@@ -239,22 +242,44 @@ class SparseOldLevelOracle:
                 max_output_cells=self.max_output_cells)
         else:
             original_seed = np.empty(0,dtype=np.int64)
-        discrepancy = set(chain)
-        discrepancy.symmetric_difference_update(
-            map(int,boundary_old_chain(original_seed,self.grid_shape)))
-        if discrepancy:
-            if int(event_value) != event_value:
-                # Native uint image filtration values are always integral.
-                raise ValueError('Expected integral event_value for old cancellation correction')
-            correction, _ = solve_component_correction(
-                self.compressed.lift_trace, sorted(discrepancy),
-                dimension=dimension, level=int(event_value)-1,
-                max_basis_columns=self.analysis.max_basis_columns,
-                max_basis_entries=self.analysis.max_basis_entries,
-                max_chain_terms=self.max_output_cells,
-                max_component_faces=self.max_component_faces)
+        if correction_method == 'homotopy':
+            # Filtered contraction identity on an old cycle x:
+            #   x + i p(x) = d H(x).
+            # During forward projection, record each activated birth a_j;
+            # H(x) is the XOR of the corresponding canceled death b_j,
+            # each lifted through strictly earlier inclusions.
+            self.projector.project(
+                chain,stop_before_value=event_value,
+                max_output_cells=self.max_output_cells,
+                record_activations=True)
+            activated=self.projector.last_activated_cancellations
+            if activated is None:
+                raise RuntimeError('Missing selective homotopy activation trace')
+            homotopy: set[int] = set()
+            for j in activated:
+                partial=self.inclusion.lift_canceled_death(
+                    j,max_output_cells=self.max_output_cells)
+                homotopy.symmetric_difference_update(map(int,partial))
+                if len(homotopy)>self.max_output_cells:
+                    raise MemoryError('Selective homotopy exceeds max_output_cells')
+            correction=np.asarray(sorted(homotopy),dtype=np.int64)
         else:
-            correction = np.empty(0,dtype=np.int64)
+            # Independent exact reference based on an incidence closure.
+            discrepancy = set(chain)
+            discrepancy.symmetric_difference_update(
+                map(int,boundary_old_chain(original_seed,self.grid_shape)))
+            if discrepancy:
+                if int(event_value) != event_value:
+                    raise ValueError('Expected integral event_value')
+                correction, _ = solve_component_correction(
+                    self.compressed.lift_trace, sorted(discrepancy),
+                    dimension=dimension, level=int(event_value)-1,
+                    max_basis_columns=self.analysis.max_basis_columns,
+                    max_basis_entries=self.analysis.max_basis_entries,
+                    max_chain_terms=self.max_output_cells,
+                    max_component_faces=self.max_component_faces)
+            else:
+                correction = np.empty(0,dtype=np.int64)
         filled=set(map(int,original_seed))
         filled.symmetric_difference_update(map(int,correction))
         out=np.asarray(sorted(filled),dtype=np.int64)
