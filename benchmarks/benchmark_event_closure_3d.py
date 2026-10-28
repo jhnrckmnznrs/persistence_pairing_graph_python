@@ -36,6 +36,8 @@ def run_case(size, pattern, max_events=2):
                 projected=projector.project(
                     witness.relation_support,stop_before_value=witness.event_value)
                 projection_s=perf_counter()-start_p
+                if len(projected)==0:
+                    raise RuntimeError('Pre-death PPG relation projected to zero')
                 ps=projector.last_projection_stats
                 results.append({"source":i,"dimension":analysis.nodes[i].dimension,
                     "reach":st.reachable_records,"replayed":st.replayed_records,
