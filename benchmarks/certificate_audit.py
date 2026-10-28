@@ -165,7 +165,9 @@ def count_persistence_events(nodes) -> dict[str, dict]:
 
 
 def summarize_filtration(image: np.ndarray) -> dict:
-    histogram = np.bincount(np.asarray(image).ravel())
+    histogram = np.bincount(
+        np.asarray(image).ravel(),
+        minlength=65536 if image.dtype == np.dtype("uint16") else 0)
     result = {
         "filtration_min": int(image.min()),
         "filtration_max": int(image.max()),
