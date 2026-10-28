@@ -27,3 +27,4 @@ jobs:
           python benchmarks/investigate_dependency_closure.py --sizes 8 12 16 24 32 --samples 8
           python benchmarks/benchmark_selective_relative.py --sizes 5 7 9
           python benchmarks/benchmark_event_closure_3d.py --sizes 5 7 9
+          python benchmarks/benchmark_projection_3d.py --sizes 8 16 24 32
