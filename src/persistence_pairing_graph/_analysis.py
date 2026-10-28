@@ -217,6 +217,34 @@ class PPGAnalysis:
             self.event_solves += 1
         return tuple(sorted(self._event_targets[key].get(source_node, ())))
 
+    def replay_dependency_closure(self, source_node: int):
+        """Measure the influence closure for a selected death-event filling.
+
+        Includes only the query-local reverse inclusion replay of the
+        compressed filling; excludes cycle reconstruction, preprocessing,
+        factorization, and trace construction. The returned counts are
+        observed cancellation dependencies, not a graph-wide bound.
+        """
+        if self.closed:
+            raise RuntimeError('Analysis has been closed')
+        if not self.retain_inclusion_trace:
+            raise ValueError('Construct PPGAnalysis with retain_inclusion_trace=True')
+        witness = self.witness(source_node, solver='replay')
+        ids = (source_node, *witness.target_nodes)
+        compressed_relation: set[int] = set()
+        for node_id in ids:
+            compressed_relation.symmetric_difference_update(
+                map(int, self._replay_cycle_cache[node_id].compressed_cells))
+        compressed_filling = _compressed_filling(
+            self.compressed, self.reduction, compressed_relation,
+            witness.event_value, max_work=self.max_work)
+        lifting = self._replay.lift(
+            self.compressed.original_grid_indices[compressed_filling],
+            max_output_cells=self.max_chain_terms, collect_dependency_stats=True)
+        if not np.array_equal(lifting, witness.filling_grid_indices):
+            raise RuntimeError('Replay dependency audit disagrees with saved certificate')
+        return self._replay.last_closure_stats
+
     def witness(self, source_node: int, *, solver='component',
                 max_component_faces: int = 2_000_000) -> TransitionFillingWitness:
         if self.closed:

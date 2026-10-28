@@ -29,6 +29,31 @@ class ReplayStatistics:
     trace_tail_bytes: int
 
 
+@dataclass(frozen=True)
+class DependencyClosureStatistics:
+    """Query-local *observed* influence closure, excluding preprocessing.
+
+    A vertex is a cancellation appearing in an influence set queried during
+    this lift (including cached influence results). An arc j -> k is counted
+    when replay of nonzero cancellation j queries an influence on its death
+    generator containing k < j. Some reachable records may cancel by parity
+    and never be replayed. Depth is the longest observed arc chain; it is
+    not the depth of the entire contraction graph.
+    """
+    seed_cells: int
+    influence_columns_queried: int
+    reachable_records: int
+    dependency_arcs: int
+    replayed_records: int
+    maximum_observed_depth: int
+    total_cancellations: int
+
+    @property
+    def reachable_fraction(self) -> float:
+        return (self.reachable_records / self.total_cancellations
+                if self.total_cancellations else 0.0)
+
+
 class SelectiveInclusionReplay:
     """Apply I=i_0...i_(m-1) to selected chains of final active generators.
 
@@ -111,6 +136,7 @@ class SelectiveInclusionReplay:
         self.tails_read = 0
         self.cached_entries = 0
         self.last_stats = None
+        self.last_closure_stats: DependencyClosureStatistics | None = None
 
     def _owner(self, cell: int):
         if self.owner_storage == 'dense':
@@ -189,7 +215,8 @@ class SelectiveInclusionReplay:
         self.cache[cell] = result
         return result
 
-    def lift(self, surviving_original_cells: Iterable[int], *, max_output_cells=500_000):
+    def lift(self, surviving_original_cells: Iterable[int], *, max_output_cells=500_000,
+             collect_dependency_stats: bool = False):
         """Return original-grid support of I(chain), over F2.
 
         For general noncycles, verifies the filtered chain-map identity in the
@@ -206,6 +233,11 @@ class SelectiveInclusionReplay:
             raise ValueError('Input chain contains a canceled generator')
         active = set()
         pending = []
+        self.last_closure_stats = None
+        reached = set() if collect_dependency_stats else None
+        depth = {} if collect_dependency_stats else None
+        arcs = 0
+        influence_queries = 0
 
         def toggle(j):
             if j in active:
@@ -217,7 +249,13 @@ class SelectiveInclusionReplay:
         before_visited = self.visited
         before_tails = self.tails_read
         for cell in cells:
-            for j in self._influence(cell):
+            infl = self._influence(cell)
+            if reached is not None:
+                influence_queries += 1
+                reached.update(infl)
+                for j in infl:
+                    depth.setdefault(j, 0)
+            for j in infl:
                 toggle(j)
         inserted = 0
         while pending:
@@ -232,9 +270,16 @@ class SelectiveInclusionReplay:
             inserted += 1
             if len(cells) > max_output_cells:
                 raise MemoryError('Selective replay exceeded max_output_cells')
-            for k in self._influence(b):
+            infl = self._influence(b)
+            if reached is not None:
+                influence_queries += 1
+                reached.update(infl)
+            for k in infl:
                 if k >= j:
                     raise RuntimeError('Invalid nontriangular inclusion dependency')
+                if reached is not None:
+                    arcs += 1
+                    depth[k] = max(depth.get(k, 0), depth.get(j, 0) + 1)
                 toggle(k)
         result = np.asarray(sorted(cells), dtype=np.int64)
         self.last_stats = ReplayStatistics(
@@ -244,4 +289,13 @@ class SelectiveInclusionReplay:
             tails_read=self.tails_read-before_tails,
             influence_entries=self.cached_entries, output_cells=len(result),
             trace_record_bytes=self.n*20, trace_tail_bytes=self.trace.replay_tail_entries*4)
+        if reached is not None:
+            self.last_closure_stats = DependencyClosureStatistics(
+                seed_cells=len(result)-inserted,
+                influence_columns_queried=influence_queries,
+                reachable_records=len(reached),
+                dependency_arcs=arcs,
+                replayed_records=inserted,
+                maximum_observed_depth=max(depth.values(), default=0),
+                total_cancellations=self.n)
         return result

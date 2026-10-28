@@ -21,12 +21,16 @@ from ._filling_locality import (FillingLocalityCertificate, certify_local_fillin
                                 eligible_filling_cells_in_box,
                                 certify_transition_filling_locality)
 from ._analysis import PPGAnalysis
-from ._reverse_replay import SelectiveInclusionReplay, ReplayStatistics
+from ._reverse_replay import SelectiveInclusionReplay, ReplayStatistics, DependencyClosureStatistics
+from ._relative_locality import (RelativeLocalityCertificate, certify_relative_filling,
+                                  certify_transition_relative_locality)
 from ._multiscale import pool_scalar_field, multiscale_betti_curves, MultiscaleBetti
 from ._robustness import ppg_perturbation_probe, PerturbationReport, PerturbationSample
 
 __all__ = [
-    'SelectiveInclusionReplay', 'ReplayStatistics',
+    'SelectiveInclusionReplay', 'ReplayStatistics', 'DependencyClosureStatistics',
+    'RelativeLocalityCertificate', 'certify_relative_filling',
+    'certify_transition_relative_locality',
     'compute_ppg', 'PersistencePairingGraph', 'PersistenceNode', 'PersistenceEdge', 'CompactNodeTable',
     'build_cubical_complex', 'compress_discrete_tensor_streaming', 'load_image', 'export_csv',
     'betti_curves', 'BettiCurves', 'validate_ppg_betti', 'representative_cycles', 'CycleRepresentative',
