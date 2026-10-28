@@ -640,3 +640,8 @@ dominate one-off analyses.
 ### Exact local filling certificates (experimental)
 
 For a complete PPG death-event relation, `certify_local_filling` decides whether it bounds using a specified set of original cubical cells. A feasible result contains a verified filling; an infeasible result contains a dual cochain witnessing the obstruction over `GF(2)`. `certify_transition_filling_locality` restricts candidate cells to a given doubled-grid box at the event's filtration threshold. The method is resource-bounded and is **not** a minimum-support or large-volume solver. See [the mathematical usage notes](docs/local_filling_certificates.md) and `tests/test_filling_locality.py`.
+
+
+### Relative fillings and replay closure diagnostics (experimental)
+
+The [relative locality module](docs/relative_locality_and_dependency_closure.md) allows all old-chain corrections while restricting newly entering filling cells to a chosen box; it returns either an exact filling or a dual obstruction. Opt-in reverse-replay closure statistics measure the number and depth of cancellation dependencies actually encountered by a selected PPG event. These are bounded reference tools, not new large-volume solvers.
