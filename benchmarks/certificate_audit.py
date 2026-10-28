@@ -381,8 +381,13 @@ def benchmark_volume(entry, opts, out_jsonl: Path) -> None:
                     new, examined = allowed_new_in_bounds(
                         image, grid_shape, node.dimension, node.death_value,
                         lo, hi, max_examined=opts["max_examined_region_cells"],
-                        max_new=opts["max_new_cells"],
+                        max_new=opts["max_new_cells"] + int(
+                            opts["exclude_critical_cell"]),
                     )
+                    result["critical_cell_is_new_candidate"] = death_cell in new
+                    if opts["exclude_critical_cell"]:
+                        new = [cell for cell in new if cell != death_cell]
+                    result["critical_cell_included"] = death_cell in new
                     result["candidate_new_cells"] = len(new)
                     result["examined_grid_cells"] = examined
                     result["candidate_enumeration_s"] = round(perf_counter()-start, 6)
@@ -568,6 +573,7 @@ def run(args) -> int:
         "reference_max_boundary_rows": args.reference_max_boundary_rows,
         "max_reference_queries": args.max_reference_queries,
         "compare_component_reference": args.compare_component_reference,
+        "exclude_critical_cell": args.exclude_critical_cell,
     }
     (output / "configuration.json").write_text(json.dumps({
         "manifest": entries, "options": options,
@@ -640,6 +646,15 @@ def run(args) -> int:
         "feasible_regions": sum(r.get("feasible") is True for r in region_rows),
         "infeasible_regions": sum(r.get("feasible") is False for r in region_rows),
         "verified_reconstructions": sum(r.get("verified") is True for r in region_rows),
+        "exclude_critical_cell": args.exclude_critical_cell,
+        "verified_dual_obstructions": sum(
+            r.get("dual_verified_on_relation") is True for r in region_rows),
+        "critical_cell_included_regions": sum(
+            r.get("critical_cell_included") is True for r in region_rows),
+        "first_feasible_radius_by_event": {
+            f"{e['id']}:{e['event_id']}": e["first_sufficient_tested_radius"]
+            for e in event_rows
+        },
         "reference_comparisons": sum(
             r.get("reference_status") == "verified" for r in region_rows),
         "component_reference_comparisons": sum(
@@ -684,6 +699,9 @@ def main() -> int:
     command.add_argument("--reference-max-boundary-rows", type=int, default=30_000)
     command.add_argument("--max-reference-queries", type=int, default=3)
     command.add_argument("--compare-component-reference", action="store_true")
+    command.add_argument("--exclude-critical-cell", action="store_true",
+                         help="Ablate the paired death cell from all t-level new-cell "
+                              "candidate sets; old correction cells remain globally allowed")
     args = parser.parse_args()
     if args.command == "_worker":
         return _worker(args.config, args.result)
