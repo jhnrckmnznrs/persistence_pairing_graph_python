@@ -422,3 +422,46 @@ class SparseOldLevelOracle:
             True,q,t,np.asarray(old_cycle,dtype=np.int64),
             old_fill,new_chain,(),len(null_combos),len(pivot_coords),
             self.projection_queries,len(target.pivot_columns_used),reconstruct)
+
+    def restricted_relative_box(self, witness, *,
+                                lower: tuple[int, ...],
+                                upper: tuple[int, ...],
+                                reconstruct: bool = True,
+                                max_examined_cells: int = 1_000_000,
+                                max_new_cells: int = 3_000,
+                                max_relative_rows: int = 10_000,
+                                max_relative_work: int = 2_000_000
+                                ) -> SparseRelativeCertificate:
+        """Test a box restricting only newly entering (q+1)-cells.
+
+        Bounds are inclusive original doubled-grid coordinates. Old-chain
+        corrections remain unrestricted inside K_{<t}. No all-old-cell
+        enumeration is performed; every candidate new cell is checked
+        against the fixed event value and cellular dimension.
+        """
+        from itertools import product
+        if tuple(witness.image_shape)!=tuple(self.image.shape):
+            raise ValueError('Witness image shape does not match the analysis')
+        low=tuple(map(int,lower)); high=tuple(map(int,upper))
+        if (len(low)!=self.image.ndim or len(high)!=self.image.ndim
+                or any(a<0 or b<a or b>=extent
+                       for a,b,extent in zip(low,high,self.grid_shape))):
+            raise ValueError('Box bounds must lie inside the doubled grid')
+        if max_examined_cells<=0:
+            raise ValueError('max_examined_cells must be positive')
+        if prod(b-a+1 for a,b in zip(low,high))>max_examined_cells:
+            raise MemoryError('Box exceeds max_examined_cells')
+        new=[]
+        for coords in product(*(range(a,b+1) for a,b in zip(low,high))):
+            if sum(x&1 for x in coords)!=witness.dimension+1:
+                continue
+            cell=int(np.ravel_multi_index(coords,self.grid_shape))
+            if _original_cell_birth(self.image,cell,self.grid_shape)==witness.event_value:
+                new.append(cell)
+                if len(new)>max_new_cells:
+                    raise MemoryError('Too many event-level filling cells in box')
+        return self.restricted_relative(
+            witness.relation_support,new,dimension=witness.dimension,
+            event_value=witness.event_value,reconstruct=reconstruct,
+            max_new_cells=max_new_cells,max_relative_rows=max_relative_rows,
+            max_relative_work=max_relative_work)
