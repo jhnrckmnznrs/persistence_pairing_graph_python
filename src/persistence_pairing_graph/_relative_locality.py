@@ -11,6 +11,7 @@ reduction and does not claim minimum support or global scalability.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 from itertools import product
 from math import prod
 from typing import Iterable, Sequence
@@ -45,6 +46,10 @@ class RelativeLocalityCertificate:
     obstruction_cells: np.ndarray
     boundary_rank: int
     xor_steps: int
+    # Diagnostics for the exact old-boundary incidence closure (or full scan).
+    old_cells_examined: int = 0
+    old_faces_visited: int = 0
+    old_solver: str = 'full'
 
 
 def certify_relative_filling(
@@ -59,6 +64,9 @@ def certify_relative_filling(
     max_new_cells: int = 10_000,
     max_boundary_rows: int = 30_000,
     max_xor_steps: int = 2_000_000,
+    old_solver: str = 'component',
+    max_examined_cofaces: int = 500_000,
+    max_component_faces: int = 200_000,
 ) -> RelativeLocalityCertificate:
     """Certify relative solvability while allowing all old (q+1)-cells.
 
@@ -78,8 +86,11 @@ def certify_relative_filling(
     if not 0 <= dimension < image.ndim or not np.isfinite(event_value):
         raise ValueError('Invalid homology dimension or event value')
     if min(max_grid_cells, max_old_cells, max_new_cells,
-           max_boundary_rows, max_xor_steps) <= 0:
+           max_boundary_rows, max_xor_steps, max_examined_cofaces,
+           max_component_faces) <= 0:
         raise ValueError('Resource limits must be positive')
+    if old_solver not in ('component', 'full'):
+        raise ValueError("old_solver must be 'component' or 'full'")
     grid_shape = tuple(2 * int(n) + 1 for n in image.shape)
     total = prod(grid_shape)
     if total > max_grid_cells:
@@ -105,15 +116,64 @@ def certify_relative_filling(
         if _original_cell_birth(image, cell, grid_shape) != event_value:
             raise ValueError('Allowed new cells must enter exactly at the event')
 
-    # Enumerate every old (q+1)-cell: old correction is NOT box-restricted.
     old: list[int] = []
-    for cell in range(total):
-        if _dimension(cell, grid_shape, strides) != dimension + 1:
-            continue
-        if _original_cell_birth(image, cell, grid_shape) < event_value:
-            old.append(cell)
-            if len(old) > max_old_cells:
-                raise MemoryError('Old filling-cell count exceeds max_old_cells')
+    examined = 0
+    visited_faces = 0
+    if old_solver == 'full':
+        # Independent bounded reference, retained for algebraic comparison.
+        for cell in range(total):
+            if _dimension(cell, grid_shape, strides) != dimension + 1:
+                continue
+            examined += 1
+            if _original_cell_birth(image, cell, grid_shape) < event_value:
+                old.append(cell)
+                if len(old) > max_old_cells:
+                    raise MemoryError('Old filling-cell count exceeds max_old_cells')
+    else:
+        # Every q-row of a new column is seeded, even when c has no support
+        # there. A solution supported on old columns outside this incidence
+        # closure would have zero boundary in its disconnected component
+        # and can be discarded. Thus this restriction preserves feasibility.
+        from ._filling_locality import _faces
+        seeds = set(relation)
+        for cell in new:
+            seeds.update(_faces(cell, grid_shape, strides))
+        if len(seeds) > max_component_faces:
+            raise MemoryError('Relative incidence closure exceeds max_component_faces')
+        pending = deque(sorted(seeds))
+        faces_seen = set(seeds)
+        cells_seen: set[int] = set()
+        old_set: set[int] = set()
+        while pending:
+            face = pending.popleft()
+            visited_faces += 1
+            for extent, stride in zip(grid_shape, strides):
+                coordinate = (face // stride) % extent
+                if coordinate & 1:
+                    continue
+                for step in (-1, 1):
+                    candidate_coordinate = coordinate + step
+                    if candidate_coordinate < 0 or candidate_coordinate >= extent:
+                        continue
+                    candidate = face + step * stride
+                    if candidate in cells_seen:
+                        continue
+                    cells_seen.add(candidate)
+                    examined += 1
+                    if examined > max_examined_cofaces:
+                        raise MemoryError('Relative incidence closure exceeds max_examined_cofaces')
+                    if _original_cell_birth(image, candidate, grid_shape) >= event_value:
+                        continue
+                    old_set.add(candidate)
+                    if len(old_set) > max_old_cells:
+                        raise MemoryError('Old filling-cell count exceeds max_old_cells')
+                    for other in _faces(candidate, grid_shape, strides):
+                        if other not in faces_seen:
+                            faces_seen.add(other)
+                            if len(faces_seen) > max_component_faces:
+                                raise MemoryError('Relative incidence closure exceeds max_component_faces')
+                            pending.append(other)
+        old = sorted(old_set)
     columns = old + new
     local: FillingLocalityCertificate = certify_local_filling(
         relation, columns, image.shape, dimension=dimension,
@@ -141,7 +201,8 @@ def certify_relative_filling(
     return RelativeLocalityCertificate(
         local.feasible, dimension, event_value, grid_shape,
         np.asarray(relation, dtype=np.int64), len(old), len(new),
-        old_part, new_part, obstruction, local.boundary_rank, local.xor_steps)
+        old_part, new_part, obstruction, local.boundary_rank, local.xor_steps,
+        examined, visited_faces, old_solver)
 
 
 def certify_transition_relative_locality(
@@ -156,6 +217,9 @@ def certify_transition_relative_locality(
     max_boundary_rows: int = 30_000,
     max_xor_steps: int = 2_000_000,
     max_examined_cells: int = 1_000_000,
+    old_solver: str = 'component',
+    max_examined_cofaces: int = 500_000,
+    max_component_faces: int = 200_000,
 ) -> RelativeLocalityCertificate:
     """Localize new cells for a complete PPG death relation, not a single edge.
 
@@ -189,4 +253,6 @@ def certify_transition_relative_locality(
         image, witness.relation_support, new, dimension=witness.dimension,
         event_value=witness.event_value, max_grid_cells=max_grid_cells,
         max_old_cells=max_old_cells, max_new_cells=max_new_cells,
-        max_boundary_rows=max_boundary_rows, max_xor_steps=max_xor_steps)
+        max_boundary_rows=max_boundary_rows, max_xor_steps=max_xor_steps,
+        old_solver=old_solver, max_examined_cofaces=max_examined_cofaces,
+        max_component_faces=max_component_faces)
