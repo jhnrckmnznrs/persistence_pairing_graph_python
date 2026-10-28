@@ -16,7 +16,7 @@ classifiers = ["Programming Language :: Python :: 3", "Topic :: Scientific/Engin
 
 [project.optional-dependencies]
 images = ["tifffile>=2023.1", "Pillow>=10"]
-rock = ["h5py>=3.8"]
+rock = ["h5py>=3.8", "scipy>=1.10"]
 speed = ["numba>=0.60"]
 test = ["pytest>=7", "tifffile>=2023.1", "Pillow>=10"]
 
