@@ -104,6 +104,73 @@ def read_complete_cohort(path: Path) -> list[dict]:
     return sorted(rows, key=lambda row: row["sample"])
 
 
+def read_stage_e_manifest(path: Path) -> dict[str, dict]:
+    """Index the frozen Stage E manifest by sample, never by stale absolute path."""
+    if not path.is_file():
+        raise FileNotFoundError(f"Saved Stage E manifest missing: {path}")
+    with path.open("r", newline="", encoding="utf-8-sig") as stream:
+        reader = csv.DictReader(stream)
+        required = {
+            "sample", "status", "input_binary_sha256_observed",
+            "levels_per_voxel", "zero_code", "output_path", "output_sha256",
+        }
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError("Saved Stage E manifest lacks required provenance columns")
+        rows = {}
+        for row in reader:
+            sample = row["sample"].strip()
+            if not SAMPLE_NAME.fullmatch(sample):
+                raise ValueError(f"Invalid sample ID in Stage E: {sample}")
+            if sample in rows:
+                raise ValueError(f"Duplicate Stage E sample: {sample}")
+            rows[sample] = row
+    return rows
+
+
+def load_saved_stage_e(root: Path, sample: str, row: dict, *,
+                       levels_per_voxel: float, binary_sha256: str
+                       ) -> tuple[np.ndarray, Path, str]:
+    """Load the frozen full-domain TIFF, verifying encoded file and source hashes.
+
+    Stage E absolute paths in the old manifest refer to ~/Desktop/drp372.
+    Resolve by validated sample ID under the new root, never by using the
+    obsolete recorded absolute location. Fail closed on any mismatch.
+    """
+    if row["status"] != "ok":
+        raise ValueError(f"Stage E sample {sample} status is {row['status']!r}")
+    if not math.isclose(float(row["levels_per_voxel"]), levels_per_voxel,
+                        rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError(
+            f"Stage E levels_per_voxel differs from requested scale for {sample}")
+    if int(row["zero_code"]) != 32768:
+        raise ValueError(f"Unexpected Stage E zero_code for {sample}")
+    if row["input_binary_sha256_observed"].lower() != binary_sha256.lower():
+        raise ValueError(f"Stage E source binary SHA-256 mismatch for {sample}")
+    basename = f"{sample}_sedt_u16.tif"
+    if Path(row["output_path"]).name != basename:
+        raise ValueError(f"Stage E output filename mismatch for {sample}")
+    tif = root / "sedt_stage_e" / "sedt" / basename
+    if not tif.is_file():
+        raise FileNotFoundError(f"Saved Stage E TIFF missing: {tif}")
+    digest = sha256(tif)
+    if not row["output_sha256"] or digest.lower() != row["output_sha256"].lower():
+        raise ValueError(f"Saved Stage E TIFF SHA-256 mismatch for {sample}")
+    try:
+        import tifffile
+    except ImportError as exc:
+        raise RuntimeError("Stage E reuse needs tifffile; install '.[images]'") from exc
+    sedt = tifffile.imread(tif)
+    if sedt.shape != (256, 256, 256) or sedt.dtype != np.dtype("uint16"):
+        raise ValueError(
+            f"Stage E TIFF must be 256^3 uint16 for {sample}; "
+            f"got {sedt.shape}, {sedt.dtype}")
+    for field, actual in (("encoded_min", int(sedt.min())),
+                          ("encoded_max", int(sedt.max()))):
+        if row.get(field) and int(row[field]) != actual:
+            raise ValueError(f"Stage E {field} mismatch for {sample}")
+    return sedt, tif, digest
+
+
 def crop_origin(shape: tuple[int, ...], crop_size: int,
                 position: str) -> tuple[int, ...]:
     if position not in ORIGINS:
@@ -143,6 +210,7 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
              origins: tuple[str, ...] = ("center", "quarter"),
              filtrations: tuple[str, ...] = ("sedt", "binary"),
              levels_per_voxel: float | None = None,
+             sedt_source: str = "stage-e",
              voxel_spacing_mm: tuple[float, ...] | None = None,
              overwrite: bool = False) -> dict:
     try:
@@ -157,6 +225,8 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
         raise ValueError("Unsupported crop origin")
     if not filtrations or any(f not in FILTRATIONS for f in filtrations):
         raise ValueError("Select binary and/or sedt filtrations")
+    if sedt_source not in ("stage-e", "recompute"):
+        raise ValueError("sedt_source must be stage-e or recompute")
     if "sedt" in filtrations and (levels_per_voxel is None or
             not math.isfinite(levels_per_voxel) or levels_per_voxel <= 0):
         raise ValueError("Specify --levels-per-voxel from the verified Stage E manifest; do not assume 32 or 64")
@@ -165,6 +235,8 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
             any(v <= 0 or not math.isfinite(v) for v in voxel_spacing_mm)):
         raise ValueError("Voxel spacing must contain three positive finite values")
     rows = read_complete_cohort(cohort_csv)
+    stage_e = (read_stage_e_manifest(root / "sedt_stage_e" / "sedt_manifest.csv")
+               if "sedt" in filtrations and sedt_source == "stage-e" else {})
     ids = set(sample_ids or [])
     if ids:
         available = {row["sample"] for row in rows}
@@ -205,10 +277,22 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
             full_bin = np.asarray(data[...],dtype=np.uint8)
             if not np.isin(full_bin,[0,1]).all():
                 raise ValueError(f"Source geometry for {sample} contains values other than 0 and 1")
-        # Compute signed distance on the FULL source. Never compute it
-        # separately within each crop: its outer boundary would move.
-        full_sedt = (signed_edt_uint16(full_bin, levels_per_voxel=levels_per_voxel)
-                     if "sedt" in filtrations else None)
+        # Prefer the original, hash-verified full-volume Stage E TIFF.
+        # Only explicit sedt_source='recompute' performs SciPy EDT work.
+        stage_row = stage_e.get(sample)
+        source_sedt_path = None
+        source_sedt_sha = None
+        if "sedt" not in filtrations:
+            full_sedt = None
+        elif sedt_source == "stage-e":
+            if stage_row is None:
+                raise ValueError(f"Sample {sample} absent from frozen Stage E manifest")
+            full_sedt, source_sedt_path, source_sedt_sha = load_saved_stage_e(
+                root, sample, stage_row, levels_per_voxel=levels_per_voxel,
+                binary_sha256=original_hash)
+        else:
+            full_sedt = signed_edt_uint16(
+                full_bin, levels_per_voxel=levels_per_voxel)
         label = permeability_lus(row)
         for size in sorted(set(crop_sizes)):
             for position in origins:
@@ -218,6 +302,11 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                 for filtration in filtrations:
                     cropped = (np.ascontiguousarray(full_sedt[slices],dtype=np.uint16)
                                if filtration == "sedt" else binary_crop)
+                    if filtration == "sedt" and not np.array_equal(
+                            cropped < 32768, binary_crop == 0):
+                        raise ValueError(
+                            f"SEDT phase/axis mismatch against source binary for "
+                            f"{sample}, {position}, size={size}")
                     ident = f"{sample}__s{size}__{position}__{filtration}"
                     target = volumes_dir / f"{ident}.npy"
                     if target.exists() and not overwrite:
@@ -228,7 +317,9 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                     manifest["volumes"].append({
                         "id": ident,
                         "path": target_rel,
-                        "group": row.get("conservative_validation_group")
+                        "group": (stage_row.get("family_validation_group")
+                                  if stage_row is not None else None)
+                                 or row.get("conservative_validation_group")
                                  or row.get("project_id")
                                  or sample.split("_")[0],
                         "split": "pilot",
@@ -239,7 +330,25 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                     metadata.append({
                         "id": ident, "sample": sample,
                         "project_id": row.get("project_id", ""),
-                        "group": row.get("conservative_validation_group", ""),
+                        "group": (stage_row.get("family_validation_group")
+                                  if stage_row is not None else None)
+                                 or row.get("conservative_validation_group", ""),
+                        "family_validation_group": (
+                            stage_row.get("family_validation_group", "")
+                            if stage_row is not None else ""),
+                        "project_validation_group": (
+                            stage_row.get("project_validation_group", "")
+                            if stage_row is not None else ""),
+                        "historical_primary_outer_fold": (
+                            stage_row.get("primary_outer_fold", "")
+                            if stage_row is not None else ""),
+                        "sedt_source": sedt_source if filtration == "sedt" else "binary",
+                        "stage_e_original_tiff_path": (
+                            str(source_sedt_path) if filtration == "sedt"
+                            and source_sedt_path is not None else ""),
+                        "stage_e_original_tiff_sha256": (
+                            source_sedt_sha if filtration == "sedt"
+                            and source_sedt_sha is not None else ""),
                         "original_mat_path": str(mat),
                         "original_mat_sha256": original_hash,
                         "cropped_npy_path": target_rel,
@@ -276,6 +385,10 @@ def generate(*, cohort_csv: Path, root: Path, output: Path,
                               if "sedt" in filtrations else None),
         "levels_per_voxel": levels_per_voxel,
         "distance_transform_domain": "full_256_cube_before_crop",
+        "sedt_source": sedt_source if "sedt" in filtrations else None,
+        "stage_e_manifest": (str(root / "sedt_stage_e" / "sedt_manifest.csv")
+                             if "sedt" in filtrations
+                             and sedt_source == "stage-e" else None),
         "samples": len(rows), "crops": len(metadata),
         "crop_sizes": sorted(set(crop_sizes)), "origins": list(origins),
         "permeability_with_valid_source_unit": sum(
@@ -302,6 +415,9 @@ def main() -> None:
     parser.add_argument("--voxel-spacing-mm", nargs=3, type=float)
     parser.add_argument("--levels-per-voxel", type=float,
                         help="Required with sedt; verify against Stage E manifest")
+    parser.add_argument("--sedt-source", choices=("stage-e", "recompute"),
+                        default="stage-e",
+                        help="Reuse hash-verified Stage E TIFFs (default); recompute only explicitly")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     result = generate(
@@ -310,6 +426,7 @@ def main() -> None:
         crop_sizes=tuple(args.sizes), origins=tuple(args.origins),
         filtrations=tuple(args.filtrations),
         levels_per_voxel=args.levels_per_voxel,
+        sedt_source=args.sedt_source,
         voxel_spacing_mm=tuple(args.voxel_spacing_mm)
                          if args.voxel_spacing_mm else None,
         overwrite=args.overwrite)
